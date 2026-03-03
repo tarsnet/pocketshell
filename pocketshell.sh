@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# PocketShell — Single CLI Entrypoint
+# Usage: ./pocketshell.sh [setup|start|stop|help]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIDFILE="$SCRIPT_DIR/.pocketshell.pid"
+TUNNEL_NAME="claude-terminal"
+
+# --- Colors ---
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+usage() {
+  echo ""
+  echo -e "${BOLD}PocketShell${NC} — Claude Code in your browser"
+  echo ""
+  echo -e "Usage: ${CYAN}./pocketshell.sh${NC} <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  setup                Check prerequisites and install dependencies"
+  echo "  start                Start the server (default: local with auth)"
+  echo "  stop                 Stop running server and tunnel"
+  echo "  help                 Show this help message"
+  echo ""
+  echo "Start options:"
+  echo "  --local              Start server locally with auth (default)"
+  echo "  --remote             Start server + devtunnel for remote access"
+  echo "  --local-noauth       Start server without auth (trusted network only)"
+  echo ""
+  echo "Examples:"
+  echo -e "  ${CYAN}./pocketshell.sh setup${NC}                 # First-time setup"
+  echo -e "  ${CYAN}./pocketshell.sh start${NC}                 # Start locally"
+  echo -e "  ${CYAN}./pocketshell.sh start --remote${NC}         # Start with tunnel"
+  echo -e "  ${CYAN}./pocketshell.sh start --local-noauth${NC}   # Start without auth"
+  echo -e "  ${CYAN}./pocketshell.sh stop${NC}                  # Stop everything"
+  echo ""
+}
+
+cmd_setup() {
+  bash "$SCRIPT_DIR/prerequisites.sh"
+}
+
+save_pid() {
+  echo "$1" >> "$PIDFILE"
+}
+
+cmd_stop() {
+  local killed=0
+
+  # Kill PIDs from pidfile
+  if [ -f "$PIDFILE" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null && echo -e "  Stopped process ${CYAN}${pid}${NC}"
+        killed=$((killed + 1))
+      fi
+    done < "$PIDFILE"
+    rm -f "$PIDFILE"
+  fi
+
+  # Also find any stray server processes
+  local server_pids
+  server_pids="$(pgrep -f 'node server.js' 2>/dev/null || true)"
+  for pid in $server_pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null && echo -e "  Stopped server ${CYAN}${pid}${NC}"
+      killed=$((killed + 1))
+    fi
+  done
+
+  # Kill devtunnel processes
+  local tunnel_pids
+  tunnel_pids="$(pgrep -f 'devtunnel host' 2>/dev/null || true)"
+  for pid in $tunnel_pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null && echo -e "  Stopped tunnel ${CYAN}${pid}${NC}"
+      killed=$((killed + 1))
+    fi
+  done
+
+  if [ "$killed" -eq 0 ]; then
+    echo -e "${YELLOW}No running PocketShell processes found.${NC}"
+  else
+    echo -e "${GREEN}Stopped.${NC}"
+  fi
+}
+
+cmd_start_local() {
+  echo -e "${BOLD}Starting PocketShell (local, with auth)...${NC}"
+  echo ""
+  cd "$SCRIPT_DIR"
+  exec node server.js "$@"
+}
+
+cmd_start_noauth() {
+  echo -e "${BOLD}Starting PocketShell (local, no auth)...${NC}"
+  echo -e "${YELLOW}Warning: Authentication is disabled. Only use on trusted networks.${NC}"
+  echo ""
+  cd "$SCRIPT_DIR"
+  exec node server.js --no-auth "$@"
+}
+
+cmd_start_remote() {
+  # Check devtunnel is available
+  if ! command -v devtunnel &>/dev/null; then
+    echo -e "${RED}Error: devtunnel CLI not found.${NC}"
+    echo -e "Install: ${CYAN}curl -sL https://aka.ms/DevTunnelCliInstall | bash${NC}"
+    exit 1
+  fi
+
+  # Check devtunnel is logged in
+  if ! devtunnel user show &>/dev/null; then
+    echo -e "${RED}Error: devtunnel not logged in.${NC}"
+    echo -e "Run: ${CYAN}devtunnel user login -g -d${NC}"
+    exit 1
+  fi
+
+  # Ensure tunnel exists (create if not)
+  if ! devtunnel show "$TUNNEL_NAME" &>/dev/null 2>&1; then
+    echo -e "${YELLOW}Creating tunnel '${TUNNEL_NAME}'...${NC}"
+    devtunnel create "$TUNNEL_NAME" --allow-anonymous
+    devtunnel port create "$TUNNEL_NAME" -p 3000 --protocol https
+  fi
+
+  echo -e "${BOLD}Starting PocketShell (remote access)...${NC}"
+  echo ""
+
+  # Clean up old pidfile
+  rm -f "$PIDFILE"
+
+  # Start server in background
+  cd "$SCRIPT_DIR"
+  node server.js &
+  local server_pid=$!
+  save_pid "$server_pid"
+  echo -e "  Server started (PID: ${CYAN}${server_pid}${NC})"
+
+  # Give server a moment to start
+  sleep 1
+
+  # Trap to clean up both processes on Ctrl+C
+  cleanup() {
+    echo ""
+    echo -e "${BOLD}Shutting down...${NC}"
+    kill "$server_pid" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    echo -e "${GREEN}Stopped.${NC}"
+    exit 0
+  }
+  trap cleanup SIGINT SIGTERM
+
+  # Start tunnel in foreground
+  echo -e "  Starting tunnel..."
+  echo ""
+  devtunnel host "$TUNNEL_NAME" &
+  local tunnel_pid=$!
+  save_pid "$tunnel_pid"
+
+  # Wait for either process to exit
+  wait -n "$server_pid" "$tunnel_pid" 2>/dev/null || true
+  cleanup
+}
+
+# --- Main ---
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+  setup)
+    cmd_setup
+    ;;
+  start)
+    MODE="${1:---local}"
+    shift || true
+    case "$MODE" in
+      --local)
+        cmd_start_local "$@"
+        ;;
+      --remote)
+        cmd_start_remote
+        ;;
+      --local-noauth)
+        cmd_start_noauth "$@"
+        ;;
+      *)
+        echo -e "${RED}Unknown start option: ${MODE}${NC}"
+        echo "Use: --local, --remote, or --local-noauth"
+        exit 1
+        ;;
+    esac
+    ;;
+  stop)
+    cmd_stop
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    echo -e "${RED}Unknown command: ${COMMAND}${NC}"
+    usage
+    exit 1
+    ;;
+esac

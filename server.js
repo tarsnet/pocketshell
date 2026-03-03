@@ -5,29 +5,43 @@ const pty = require('node-pty');
 const path = require('path');
 const auth = require('./auth');
 
-const PORT = process.env.PORT || 3000;
+// --- CLI flags ---
+const args = process.argv.slice(2);
+const NO_AUTH = args.includes('--no-auth');
+const portFlagIndex = args.indexOf('--port');
+const PORT = (portFlagIndex !== -1 && args[portFlagIndex + 1])
+  ? parseInt(args[portFlagIndex + 1], 10)
+  : (process.env.PORT || 3000);
 const REPLAY_BUFFER_SIZE = 100 * 1024; // 100KB
 
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy so req.protocol detects HTTPS behind tunnels
+app.set('trust proxy', 1);
+
 // --- Body parsing ---
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// --- Auth API routes (public, no auth required) ---
-auth.setupRoutes(app);
+if (NO_AUTH) {
+  // --- No auth mode: serve everything without authentication ---
+  app.use(express.static(path.join(__dirname, 'public')));
+} else {
+  // --- Auth API routes (public, no auth required) ---
+  auth.setupRoutes(app);
 
-// --- Serve login page without auth ---
-app.get('/login.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
+  // --- Serve login page without auth ---
+  app.get('/login.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  });
 
-// --- Auth middleware (everything below requires login) ---
-app.use(auth.authMiddleware);
+  // --- Auth middleware (everything below requires login) ---
+  app.use(auth.authMiddleware);
 
-// --- Static files (protected) ---
-app.use(express.static(path.join(__dirname, 'public')));
+  // --- Static files (protected) ---
+  app.use(express.static(path.join(__dirname, 'public')));
+}
 
 // --- UA-based redirect ---
 app.get('/', (req, res) => {
@@ -40,6 +54,7 @@ app.get('/', (req, res) => {
 const wss = new WebSocketServer({
   server,
   verifyClient: (info) => {
+    if (NO_AUTH) return true;
     return auth.authenticateWs(info.req);
   },
 });
@@ -169,10 +184,18 @@ process.on('SIGTERM', shutdown);
 
 // --- Start ---
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[server] Claude Web Terminal running on http://0.0.0.0:${PORT}`);
-  console.log(`[server]   Desktop: http://localhost:${PORT}/desktop.html`);
-  console.log(`[server]   Mobile:  http://localhost:${PORT}/mobile.html`);
-  if (!auth.isSetupComplete()) {
-    console.log(`[server]   First-time setup: http://localhost:${PORT}/login.html`);
+  console.log('');
+  console.log('  ┌─────────────────────────────────────────────┐');
+  console.log('  │            PocketShell is running            │');
+  console.log('  ├─────────────────────────────────────────────┤');
+  console.log(`  │  Local:   http://localhost:${PORT}              │`);
+  console.log(`  │  Desktop: http://localhost:${PORT}/desktop.html │`);
+  console.log(`  │  Mobile:  http://localhost:${PORT}/mobile.html  │`);
+  if (NO_AUTH) {
+    console.log('  │  Auth:    DISABLED (--no-auth)               │');
+  } else if (!auth.isSetupComplete()) {
+    console.log(`  │  Setup:   http://localhost:${PORT}/login.html  │`);
   }
+  console.log('  └─────────────────────────────────────────────┘');
+  console.log('');
 });

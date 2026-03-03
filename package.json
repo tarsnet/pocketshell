@@ -1,10 +1,14 @@
 {
-  "name": "claude-web-terminal",
+  "name": "pocketshell",
   "version": "1.0.0",
   "description": "Claude Code CLI exposed via web browser with mobile-friendly UI",
+  "license": "Apache-2.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "setup": "bash prerequisites.sh",
+    "start:remote": "bash pocketshell.sh start --remote",
+    "start:noauth": "node server.js --no-auth"
   },
   "dependencies": {
     "express": "^4.21.0",
