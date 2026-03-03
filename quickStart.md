@@ -5,7 +5,8 @@ Get PocketShell running in 5 minutes.
 ## Prerequisites
 
 - **Node.js** 18+ installed
-- **Claude CLI** installed and authenticated (`claude` command works in your terminal)
+- **Claude CLI** installed and authenticated (if you want to use Claude mode)
+- **GitHub Copilot CLI** installed (if you want to use Copilot mode)
 - **A TOTP authenticator app** on your phone (Google Authenticator, Authy, etc.)
 
 ## 1. Setup
@@ -26,14 +27,14 @@ npm start
 You should see:
 
 ```
-  ┌─────────────────────────────────────────────┐
-  │            PocketShell is running            │
-  ├─────────────────────────────────────────────┤
-  │  Local:   http://localhost:3000              │
-  │  Desktop: http://localhost:3000/desktop.html │
-  │  Mobile:  http://localhost:3000/mobile.html  │
-  │  Setup:   http://localhost:3000/login.html   │
-  └─────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────────┐
+  │                  PocketShell is running                    │
+  ├────────────────────────────────────────────────────────────┤
+  │  Landing:   http://localhost:3000                           │
+  │  Claude:    http://localhost:3000/desktop/claude             │
+  │  Copilot:   http://localhost:3000/desktop/copilot            │
+  │  Terminal:  http://localhost:3000/desktop/terminal            │
+  └────────────────────────────────────────────────────────────┘
 ```
 
 ## 3. First-Time Auth Setup
@@ -47,13 +48,23 @@ Open `http://localhost:3000` in your browser. You'll be redirected to the setup 
 
 > Your credentials are saved to `.auth.json`. Don't commit this file.
 
-## 4. Access Locally
+## 4. Pick a Mode
 
-- **Desktop**: `http://localhost:3000` (auto-redirects by device)
+After login, you'll see the landing page with three options:
+
+- **Claude Code** — AI-powered coding assistant
+- **GitHub Copilot** — Copilot CLI assistant
+- **Terminal** — Plain bash shell
+
+Click any card to launch that mode. The landing page auto-detects your device and links to desktop or mobile view.
+
+## 5. Access Locally
+
+- **Landing page**: `http://localhost:3000`
 - **Mobile on same network**: `http://<your-ip>:3000`
 - **No-auth mode**: `npm run start:noauth` (skips login — trusted networks only)
 
-## 5. Access Remotely
+## 6. Access Remotely
 
 ### One-time tunnel setup
 
@@ -75,12 +86,12 @@ This starts the server and tunnel together. The tunnel URL is printed in the out
 
 Press `Ctrl+C` to stop both.
 
-## 6. Daily Usage
+## 7. Daily Usage
 
 1. Start server: `npm start` (local) or `npm run start:remote` (remote)
-2. Open the URL on your phone
+2. Open the URL on your device
 3. Login with password + authenticator code
-4. Use Claude via the mobile reader view or raw terminal
+4. Pick a mode from the landing page
 
 ### Mobile Controls
 
@@ -89,16 +100,16 @@ Press `Ctrl+C` to stop both.
 | **View toggle** (status bar) | Switch between Reader and Terminal view |
 | **A+ / A-** | Adjust font size |
 | **Quick actions** | Tap 1-4, Yes/No, Esc, Tab, arrows, Ctrl+C, Enter |
-| **Input bar** | Type and send text to Claude |
+| **Input bar** | Type and send text |
 | **Copy button** | Copy tool output (reader view) |
-| **Restart** | Restart Claude CLI process |
+| **Restart** | Restart the current mode's process |
 
 ### Desktop Controls
 
 | Control | Action |
 |---------|--------|
-| Type normally | All keystrokes forwarded to Claude CLI |
-| `Ctrl+Shift+R` | Restart Claude CLI process |
+| Type normally | All keystrokes forwarded to the terminal |
+| `Ctrl+Shift+R` | Restart the current mode's process |
 
 ## Troubleshooting
 
@@ -120,7 +131,7 @@ The client auto-reconnects every 2 seconds. Check that the server is running.
 
 ### "Reader view shows garbled output"
 
-Switch to Terminal view (tap the toggle button). The reader parser works best with standard Claude CLI output.
+Switch to Terminal view (tap the toggle button). The reader parser works best with standard CLI output.
 
 ### "Can't access from phone on same WiFi"
 

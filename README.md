@@ -1,47 +1,80 @@
 # PocketShell
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Access [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) from any browser — desktop or mobile. Free and open source.
+**Your terminal, anywhere.** Run Claude Code, GitHub Copilot, or a plain bash shell from any browser — desktop or mobile.
+
+<!-- If you have a landing page screenshot, uncomment:
+![PocketShell Landing Page](docs/landing-page.png)
+-->
+
+## Why PocketShell?
+
+Sometimes you need a terminal on a device that doesn't have one — your phone, a tablet, a borrowed laptop. PocketShell gives you a full terminal experience through the browser, with dedicated support for AI coding assistants.
+
+| Mode | What you get |
+|------|-------------|
+| **Claude Code** | Anthropic's AI coding assistant with a mobile-friendly reader view |
+| **GitHub Copilot** | GitHub's CLI assistant in your browser |
+| **Terminal** | Plain bash shell — use it for anything |
+
+Each mode runs its own independent PTY session. Open all three in separate tabs if you want.
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/AwareSelf/pocketshell.git
+git clone https://github.com/tarsnet/pocketshell.git
 cd pocketshell
 npm run setup    # checks prerequisites, installs dependencies
 npm start        # starts server at http://localhost:3000
 ```
 
-Open `http://localhost:3000` in your browser. On first visit you'll set up a password + TOTP for authentication.
+Open `http://localhost:3000` — you'll see the landing page. Pick a mode and go.
 
 ## Features
 
-- **Desktop & Mobile UIs** — Full terminal for desktop, chat-style reader view for mobile
+- **Three terminal modes** — Claude Code, GitHub Copilot, or plain bash, each with its own PTY
+- **Desktop & Mobile UIs** — Full xterm.js terminal for desktop, chat-style reader view for mobile
+- **Per-mode reader parsers** — Claude, Copilot, and terminal output each parsed into styled segments
 - **Real-time streaming** — WebSocket-based PTY with replay buffer for reconnecting clients
-- **Mobile Reader View** — Parses Claude CLI output into styled conversation segments
 - **Secure remote access** — Password + TOTP (Google Authenticator), rate-limited login, signed cookies
 - **One-command tunnel** — Microsoft Dev Tunnels integration for persistent HTTPS URLs
 - **No build step** — Pure client-side JavaScript, no bundler required
 
+## URL Structure
+
+| URL | Description |
+|-----|-------------|
+| `/` | Landing page — pick a mode |
+| `/desktop/claude` | Desktop terminal running Claude Code |
+| `/desktop/copilot` | Desktop terminal running GitHub Copilot |
+| `/desktop/terminal` | Desktop terminal running bash |
+| `/mobile/claude` | Mobile reader view running Claude Code |
+| `/mobile/copilot` | Mobile reader view running GitHub Copilot |
+| `/mobile/terminal` | Mobile reader view running bash |
+
+The landing page auto-detects your device and links to the right view.
+
 ## Architecture
 
 ```
-Browser (Desktop/Mobile)
+Browser (Desktop / Mobile)
     |
-    |-- HTTPS --> Express Server --> node-pty --> Claude CLI
-    |                 |
-    |                 |-- Auth Middleware (password + TOTP)
-    |                 |-- Replay Buffer (100KB)
-    |                 +-- WebSocket broadcast to all clients
+    |-- /desktop/:mode --> xterm.js full terminal
+    |-- /mobile/:mode  --> reader view + hidden xterm.js
     |
-    +-- Optional: Dev Tunnel (HTTPS) for remote access
-```
-
-### Mobile Reader View Pipeline
-
-```
-WebSocket --> xterm.js (hidden) --> Buffer Scraper --> Conversation Parser --> Styled Chat View
+    +-- WebSocket /ws/:mode
+            |
+            v
+        Express Server
+            |
+            +-- PtySession (per mode, lazy-spawned)
+            |       |-- node-pty --> claude / copilot / bash
+            |       |-- Replay buffer (100KB)
+            |       +-- Broadcast to connected clients
+            |
+            +-- Auth Middleware (password + TOTP)
+            +-- Optional: Dev Tunnel (HTTPS)
 ```
 
 ## Usage
@@ -64,7 +97,7 @@ WebSocket --> xterm.js (hidden) --> Buffer Scraper --> Conversation Parser --> S
 ./pocketshell.sh start --remote    # or: npm run start:remote
 ```
 
-Starts the server and a Dev Tunnel in one terminal. Prints the HTTPS URL. Ctrl+C stops both.
+Starts the server and a Dev Tunnel together. Prints the HTTPS URL. Ctrl+C stops both.
 
 Requires [Dev Tunnels CLI](https://aka.ms/DevTunnelCliInstall) — one-time setup:
 
@@ -89,13 +122,13 @@ node server.js --port 8080
 ## CLI Reference
 
 ```
-./pocketshell.sh setup              # Check prerequisites, install deps
-./pocketshell.sh start              # Start locally with auth (default)
-./pocketshell.sh start --local      # Same as above
-./pocketshell.sh start --remote     # Start server + tunnel
+./pocketshell.sh setup                 # Check prerequisites, install deps
+./pocketshell.sh start                 # Start locally with auth (default)
+./pocketshell.sh start --local         # Same as above
+./pocketshell.sh start --remote        # Start server + tunnel
 ./pocketshell.sh start --local-noauth  # Start without auth
-./pocketshell.sh stop               # Stop server and tunnel
-./pocketshell.sh help               # Show usage
+./pocketshell.sh stop                  # Stop server and tunnel
+./pocketshell.sh help                  # Show usage
 ```
 
 ## npm scripts
@@ -113,8 +146,8 @@ node server.js --port 8080
 |----------|--------|-------|
 | macOS | Full support | Works natively |
 | Linux | Full support | Works natively |
-| WSL | Full support | Claude CLI must be installed inside WSL |
-| Windows (native) | Partial | Needs Node.js + build tools for node-pty; use npm scripts instead of bash |
+| WSL | Full support | CLI tools must be installed inside WSL |
+| Windows (native) | Partial | Needs Node.js + build tools for node-pty |
 
 ## Security
 
@@ -132,17 +165,20 @@ node server.js --port 8080
 
 ```
 pocketshell/
-  pocketshell.sh         # CLI entrypoint
-  prerequisites.sh       # Dependency checker
-  server.js              # Express + WebSocket + PTY server
-  auth.js                # Authentication (password, TOTP, sessions)
+  pocketshell.sh           # CLI entrypoint
+  prerequisites.sh         # Dependency checker
+  server.js                # Express + WebSocket + multi-mode PTY server
+  auth.js                  # Authentication (password, TOTP, sessions)
   package.json
   public/
-    login.html           # Setup/login page
-    desktop.html/.js/.css # Desktop terminal UI
-    mobile.html/.js/.css  # Mobile terminal + reader UI
-    shared.js            # Shared terminal config, WebSocket, theme
-    reader-parser.js     # Conversation parser for reader view
+    index.html / index.css # Landing page (mode picker)
+    login.html             # Setup/login page
+    desktop.html/.js/.css  # Desktop terminal UI
+    mobile.html/.js/.css   # Mobile terminal + reader UI
+    shared.js              # Shared terminal config, WebSocket, theme
+    reader-parser.js       # Claude CLI conversation parser
+    copilot-parser.js      # Copilot CLI conversation parser
+    terminal-parser.js     # Plain terminal conversation parser
 ```
 
 ## Resetting Authentication
@@ -155,4 +191,4 @@ npm start
 
 ## License
 
-Apache License 2.0 — free for personal and commercial use. See [LICENSE](LICENSE).
+MIT License — free for personal and commercial use. See [LICENSE](LICENSE).

@@ -1,8 +1,8 @@
 {
   "name": "pocketshell",
   "version": "1.0.0",
-  "description": "Claude Code CLI exposed via web browser with mobile-friendly UI",
-  "license": "Apache-2.0",
+  "description": "Multi-mode terminal in your browser — Claude Code, GitHub Copilot, or plain bash",
+  "license": "MIT",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
