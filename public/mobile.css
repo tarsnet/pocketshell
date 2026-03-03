@@ -1,0 +1,450 @@
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: #1a1b26;
+  color: #c0caf5;
+  font-family: system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  /* iOS safe areas */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* --- Status Bar --- */
+#status-bar {
+  flex-shrink: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #16161e;
+  font-size: 13px;
+  color: #565f89;
+  gap: 8px;
+}
+
+#status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f7768e;
+  transition: background 0.3s;
+}
+
+#status-indicator.connected {
+  background: #9ece6a;
+}
+
+#font-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.font-btn {
+  background: #24283b;
+  color: #c0caf5;
+  border: 1px solid #414868;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 36px;
+  min-height: 28px;
+}
+
+.font-btn:active {
+  background: #414868;
+}
+
+/* --- Terminal --- */
+#terminal-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --- Quick Actions --- */
+#quick-actions {
+  flex-shrink: 0;
+  display: flex;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #16161e;
+  border-top: 1px solid #24283b;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#quick-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.action-btn {
+  flex-shrink: 0;
+  background: #24283b;
+  color: #c0caf5;
+  border: 1px solid #414868;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 36px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn:active {
+  background: #414868;
+}
+
+.sel-btn {
+  background: #1a1b36;
+  color: #7aa2f7;
+  border-color: #7aa2f744;
+  font-weight: 700;
+  min-width: 40px;
+}
+
+#restart-btn {
+  color: #f7768e;
+  border-color: #f7768e44;
+}
+
+/* --- Input Bar --- */
+#input-bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: #16161e;
+  border-top: 1px solid #24283b;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
+#input-field {
+  flex: 1;
+  background: #24283b;
+  color: #c0caf5;
+  border: 1px solid #414868;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 16px; /* prevents iOS zoom */
+  font-family: inherit;
+  outline: none;
+}
+
+#input-field:focus {
+  border-color: #7aa2f7;
+}
+
+#input-field::placeholder {
+  color: #565f89;
+}
+
+#send-btn {
+  flex-shrink: 0;
+  background: #7aa2f7;
+  color: #1a1b26;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 60px;
+}
+
+#send-btn:active {
+  background: #3d59a1;
+}
+
+/* --- View Toggle --- */
+#view-toggle {
+  background: #24283b;
+  color: #7aa2f7;
+  border: 1px solid #7aa2f744;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 36px;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+#view-toggle:active {
+  background: #414868;
+}
+
+/* --- Reader Container --- */
+#reader-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px;
+  display: none;
+}
+
+/* View toggling */
+body.reader-active #terminal-container {
+  display: none;
+}
+
+body.reader-active #reader-container {
+  display: block;
+}
+
+body.terminal-active #reader-container {
+  display: none;
+}
+
+body.terminal-active #terminal-container {
+  display: block;
+}
+
+/* --- Reader Messages --- */
+#reader-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+/* Message base */
+.reader-msg {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  animation: fadeSlideIn 0.2s ease-out;
+}
+
+/* User messages */
+.msg-user {
+  background: #24283b;
+  border-left: 3px solid #7aa2f7;
+}
+
+.msg-user .msg-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7aa2f7;
+  margin-bottom: 4px;
+}
+
+.msg-user .msg-content {
+  color: #c0caf5;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Assistant messages */
+.msg-assistant {
+  background: transparent;
+  padding: 10px 4px;
+}
+
+.msg-assistant .msg-content {
+  color: #c0caf5;
+  font-family: system-ui, -apple-system, sans-serif;
+  white-space: pre-wrap;
+}
+
+/* Tool blocks (call + result) */
+.tool-block {
+  background: #16161e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #1a1b2e;
+  border-bottom: 1px solid #24283b;
+}
+
+.tool-name {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+  color: #bb9af7;
+}
+
+.tool-result-label {
+  color: #7dcfff;
+}
+
+.tool-copy-btn {
+  background: none;
+  border: 1px solid #414868;
+  color: #565f89;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-copy-btn:active {
+  background: #414868;
+  color: #c0caf5;
+}
+
+.tool-body {
+  padding: 8px 12px;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #a9b1d6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* System messages */
+.msg-system {
+  text-align: center;
+  color: #565f89;
+  font-size: 12px;
+  font-family: monospace;
+  padding: 4px;
+}
+
+/* Welcome card */
+.msg-welcome {
+  background: linear-gradient(135deg, #1a1b2e 0%, #24283b 100%);
+  border: 1px solid #414868;
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.welcome-header {
+  font-size: 18px;
+  font-weight: 700;
+  color: #c0caf5;
+  margin-bottom: 6px;
+}
+
+.welcome-icon {
+  color: #e0af68;
+  font-size: 20px;
+}
+
+.welcome-version {
+  color: #565f89;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.welcome-info {
+  color: #7aa2f7;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Inline code in assistant text */
+.reader-inline-code {
+  background: #24283b;
+  color: #e0af68;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.9em;
+}
+
+/* Bold text in assistant messages */
+.reader-bold {
+  font-weight: 700;
+  color: #c0caf5;
+}
+
+/* Fade-slide animation */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Landscape compaction --- */
+@media (orientation: landscape) and (max-height: 500px) {
+  #status-bar {
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .action-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    min-height: 30px;
+  }
+
+  #quick-actions {
+    padding: 4px 8px;
+  }
+
+  #input-bar {
+    padding: 4px 8px;
+  }
+
+  #input-field {
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+
+  #send-btn {
+    padding: 6px 14px;
+    font-size: 14px;
+  }
+
+  #reader-container {
+    padding: 4px 8px;
+  }
+
+  .reader-msg {
+    font-size: 14px;
+    padding: 6px 10px;
+  }
+
+  #reader-messages {
+    gap: 8px;
+  }
+
+  .tool-body {
+    font-size: 12px;
+    max-height: 200px;
+  }
+}

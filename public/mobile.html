@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Claude Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <!-- Status bar -->
+  <div id="status-bar">
+    <span id="status-indicator"></span>
+    <span id="status-text">Connecting...</span>
+    <button id="view-toggle">Terminal</button>
+    <div id="font-controls">
+      <button id="font-down" class="font-btn">A-</button>
+      <button id="font-up" class="font-btn">A+</button>
+    </div>
+  </div>
+
+  <!-- Terminal output -->
+  <div id="terminal-container"></div>
+
+  <!-- Reader view -->
+  <div id="reader-container">
+    <div id="reader-messages"></div>
+  </div>
+
+  <!-- Quick action row -->
+  <div id="quick-actions">
+    <button class="action-btn sel-btn" data-input="1\r">1</button>
+    <button class="action-btn sel-btn" data-input="2\r">2</button>
+    <button class="action-btn sel-btn" data-input="3\r">3</button>
+    <button class="action-btn sel-btn" data-input="4\r">4</button>
+    <button class="action-btn" data-input="y\r">Yes</button>
+    <button class="action-btn" data-input="n\r">No</button>
+    <button class="action-btn" data-input="\x1b">Esc</button>
+    <button class="action-btn" data-input="\t">Tab</button>
+    <button class="action-btn" data-input="\x1b[A">&uarr;</button>
+    <button class="action-btn" data-input="\x1b[B">&darr;</button>
+    <button class="action-btn" data-input="\x03">Ctrl+C</button>
+    <button class="action-btn" data-input="\r">Enter</button>
+    <button class="action-btn" id="restart-btn">Restart</button>
+  </div>
+
+  <!-- Input bar -->
+  <form id="input-bar" autocomplete="off">
+    <input type="text" id="input-field" placeholder="Type a message..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send">
+    <button type="submit" id="send-btn">Send</button>
+  </form>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="shared.js"></script>
+  <script src="reader-parser.js"></script>
+  <script src="mobile.js"></script>
+</body>
+</html>
