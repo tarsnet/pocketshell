@@ -1,4 +1,7 @@
 (function () {
+  const mode = window.POCKETSHELL_MODE || 'terminal';
+  const ActiveParser = { claude: ReaderParser, copilot: CopilotParser, terminal: TerminalParser }[mode] || TerminalParser;
+
   const container = document.getElementById('terminal-container');
   const indicator = document.getElementById('status-indicator');
   const statusText = document.getElementById('status-text');
@@ -62,7 +65,7 @@
     scrapeTimer = setTimeout(() => {
       const { lines, changed } = scrapeBuffer();
       if (changed || lines.length > 0) {
-        const segments = ReaderParser.parse(lines);
+        const segments = ActiveParser.parse(lines);
         renderSegments(segments);
       }
     }, 150);
@@ -174,14 +177,14 @@
       case 'system':
       default: {
         // Extract meaningful text, strip box-drawing decorations
-        const meaningful = ReaderParser.extractSystemText(segment.lines);
+        const meaningful = ActiveParser.extractSystemText(segment.lines);
         if (meaningful.length === 0) {
           return null;
         }
         const fullText = meaningful.join(' ');
 
-        // Detect Claude welcome banner
-        const versionMatch = fullText.match(/Claude Code v([\d.]+)/);
+        // Detect Claude welcome banner (only in claude mode)
+        const versionMatch = mode === 'claude' && fullText.match(/Claude Code v([\d.]+)/);
         if (versionMatch) {
           el.classList.add('msg-welcome');
           el.innerHTML = '';
@@ -263,7 +266,7 @@
       viewToggleBtn.textContent = 'Terminal';
       // Immediate scrape+render
       const { lines } = scrapeBuffer();
-      const segments = ReaderParser.parse(lines);
+      const segments = ActiveParser.parse(lines);
       renderedSegmentCount = 0;
       readerMessages.innerHTML = '';
       renderSegments(segments);

@@ -1,0 +1,98 @@
+/* Landing page — Tokyo Night theme */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #1a1b26;
+  color: #c0caf5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing {
+  text-align: center;
+  padding: 2rem;
+  max-width: 720px;
+  width: 100%;
+}
+
+.landing-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #c0caf5;
+  margin-bottom: 0.4rem;
+}
+
+.landing-subtitle {
+  font-size: 1rem;
+  color: #565f89;
+  margin-bottom: 2.5rem;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.2rem;
+  background: #24283b;
+  border: 1px solid #33467c;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #c0caf5;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.mode-card:hover {
+  background: #292e42;
+  border-color: #7aa2f7;
+  transform: translateY(-2px);
+}
+
+.mode-card:active {
+  transform: translateY(0);
+}
+
+.mode-icon {
+  font-size: 2.4rem;
+  margin-bottom: 0.8rem;
+  color: #7aa2f7;
+}
+
+.mode-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.mode-desc {
+  font-size: 0.82rem;
+  color: #565f89;
+}
+
+/* Responsive: stack on small screens */
+@media (max-width: 540px) {
+  .mode-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .mode-card {
+    padding: 1.5rem 1rem;
+  }
+
+  .landing-title {
+    font-size: 1.7rem;
+  }
+}

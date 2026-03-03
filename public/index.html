@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PocketShell</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div class="landing">
+    <h1 class="landing-title">PocketShell</h1>
+    <p class="landing-subtitle">Choose a terminal mode</p>
+    <div class="mode-grid">
+      <a class="mode-card" data-mode="claude">
+        <div class="mode-icon">&#x273B;</div>
+        <div class="mode-label">Claude Code</div>
+        <div class="mode-desc">AI-powered coding assistant</div>
+      </a>
+      <a class="mode-card" data-mode="copilot">
+        <div class="mode-icon">&#x2B22;</div>
+        <div class="mode-label">GitHub Copilot</div>
+        <div class="mode-desc">Copilot CLI assistant</div>
+      </a>
+      <a class="mode-card" data-mode="terminal">
+        <div class="mode-icon">&#x276F;</div>
+        <div class="mode-label">Terminal</div>
+        <div class="mode-desc">Plain bash shell</div>
+      </a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var isMobile = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent);
+      var view = isMobile ? 'mobile' : 'desktop';
+      document.querySelectorAll('.mode-card[data-mode]').forEach(function (card) {
+        card.href = '/' + view + '/' + card.dataset.mode;
+      });
+    })();
+  </script>
+</body>
+</html>

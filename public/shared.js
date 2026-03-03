@@ -59,7 +59,8 @@ function connectWebSocket(term, callbacks = {}) {
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}`);
+    const mode = window.POCKETSHELL_MODE || 'terminal';
+    const ws = new WebSocket(`${proto}//${location.host}/ws/${mode}`);
     state.ws = ws;
 
     ws.onopen = () => {
