@@ -1,6 +1,7 @@
 (function () {
   const mode = window.POCKETSHELL_MODE || 'terminal';
-  const ActiveParser = { claude: ReaderParser, copilot: CopilotParser, terminal: TerminalParser }[mode] || TerminalParser;
+  // Copilot uses the same UI markers as Claude (❯, ●, box-drawing), so ReaderParser works for both.
+  const ActiveParser = { claude: ReaderParser, copilot: ReaderParser, terminal: TerminalParser }[mode] || TerminalParser;
 
   const container = document.getElementById('terminal-container');
   const indicator = document.getElementById('status-indicator');
@@ -184,24 +185,33 @@
         }
         const fullText = meaningful.join(' ');
 
-        // Detect Claude welcome banner (only in claude mode)
-        const versionMatch = mode === 'claude' && fullText.match(/Claude Code v([\d.]+)/);
-        if (versionMatch) {
+        // Detect CLI welcome banners
+        const claudeMatch = mode === 'claude' && fullText.match(/Claude Code v([\d.]+)/);
+        const copilotMatch = mode === 'copilot' && fullText.match(/GitHub Copilot v([\d.]+)/);
+        const welcomeMatch2 = claudeMatch || copilotMatch;
+        if (welcomeMatch2) {
           el.classList.add('msg-welcome');
           el.innerHTML = '';
-          // Header with icon
           const header = document.createElement('div');
           header.className = 'welcome-header';
-          header.innerHTML = '<span class="welcome-icon">\u273B</span> Claude Code <span class="welcome-version">v' + escapeHtml(versionMatch[1]) + '</span>';
+          if (claudeMatch) {
+            header.innerHTML = '<span class="welcome-icon">\u273B</span> Claude Code <span class="welcome-version">v' + escapeHtml(claudeMatch[1]) + '</span>';
+          } else {
+            header.innerHTML = '<span class="welcome-icon">\u2B22</span> GitHub Copilot <span class="welcome-version">v' + escapeHtml(copilotMatch[1]) + '</span>';
+          }
           el.appendChild(header);
           // Extract useful info lines
           const infoItems = [];
-          const modelMatch = fullText.match(/(Opus|Sonnet|Haiku)\s+[\d.]+\s*\([^)]*\)/);
-          if (modelMatch) infoItems.push(modelMatch[0]);
-          const welcomeMatch = fullText.match(/Welcome back \w+!/);
-          if (welcomeMatch) infoItems.push(welcomeMatch[0]);
+          if (claudeMatch) {
+            const modelMatch = fullText.match(/(Opus|Sonnet|Haiku)\s+[\d.]+\s*\([^)]*\)/);
+            if (modelMatch) infoItems.push(modelMatch[0]);
+            const welcomeBack = fullText.match(/Welcome back \w+!/);
+            if (welcomeBack) infoItems.push(welcomeBack[0]);
+          }
           const pathMatch = fullText.match(/(\/home\/\S+|\/Users\/\S+|~\/\S+)/);
           if (pathMatch) infoItems.push(pathMatch[0]);
+          const checkMistakes = fullText.match(/Check for mistakes/);
+          if (checkMistakes) infoItems.push('AI · Check for mistakes');
           if (infoItems.length > 0) {
             const info = document.createElement('div');
             info.className = 'welcome-info';
