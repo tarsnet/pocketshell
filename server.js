@@ -56,11 +56,13 @@ class PtySession {
     delete env.CLAUDE_CODE;
 
     const modeConfig = MODES[this.mode];
-    const spawnArgs = modeConfig.cmd
-      ? ['-l', '-c', modeConfig.cmd]
-      : ['-l'];
 
-    this.ptyProcess = pty.spawn(shell, spawnArgs, {
+    // For commands (claude, copilot): spawn the binary directly to avoid
+    // any bash profile/rc noise. For terminal: use login shell.
+    const spawnCmd = modeConfig.cmd || shell;
+    const spawnArgs = modeConfig.cmd ? [] : ['-l'];
+
+    this.ptyProcess = pty.spawn(spawnCmd, spawnArgs, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -104,7 +106,7 @@ class PtySession {
   }
 }
 
-// --- Sessions Map (lazy-spawned) ---
+// --- Sessions Map ---
 const sessions = new Map();
 
 function getOrCreateSession(mode) {
@@ -118,6 +120,12 @@ function getOrCreateSession(mode) {
     session.spawn();
   }
   return session;
+}
+
+// Eagerly spawn all modes at startup so they're fully ready by the time
+// a user navigates through auth/landing page.
+for (const mode of Object.keys(MODES)) {
+  getOrCreateSession(mode);
 }
 
 // --- Redirect old direct-access URLs to landing page ---
@@ -155,18 +163,29 @@ const desktopHtml = fs.readFileSync(path.join(__dirname, 'public', 'desktop.html
 const mobileHtml = fs.readFileSync(path.join(__dirname, 'public', 'mobile.html'), 'utf8');
 
 // --- View + mode routes: /desktop/:mode and /mobile/:mode ---
-app.get('/desktop/:mode(claude|copilot|terminal)', (req, res) => {
-  const mode = req.params.mode;
+// Pre-spawn PTY on page load so bash profile noise clears before WS connects.
+// Cache-bust asset URLs so phones don't serve stale broken files.
+const startupTs = Date.now();
+
+function serveModeHtml(template, mode, res) {
+  // Pre-spawn the PTY session so it's ready by the time WebSocket connects
+  getOrCreateSession(mode);
+
   const modeScript = `<script>window.POCKETSHELL_MODE="${mode}";</script>`;
-  const html = desktopHtml.replace('</head>', modeScript + '\n</head>');
+  let html = template.replace('</head>', modeScript + '\n</head>');
+  // Cache-bust local assets to avoid stale cached 404s
+  html = html.replace(/((?:src|href)="\/[^"]+\.(?:js|css))(")/g, `$1?v=${startupTs}$2`);
+
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.type('html').send(html);
+}
+
+app.get('/desktop/:mode(claude|copilot|terminal)', (req, res) => {
+  serveModeHtml(desktopHtml, req.params.mode, res);
 });
 
 app.get('/mobile/:mode(claude|copilot|terminal)', (req, res) => {
-  const mode = req.params.mode;
-  const modeScript = `<script>window.POCKETSHELL_MODE="${mode}";</script>`;
-  const html = mobileHtml.replace('</head>', modeScript + '\n</head>');
-  res.type('html').send(html);
+  serveModeHtml(mobileHtml, req.params.mode, res);
 });
 
 // --- WebSocket Server (with auth + path routing) ---

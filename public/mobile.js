@@ -73,6 +73,7 @@
 
   // --- Renderer ---
   let renderedSegmentCount = 0;
+  let lastFirstSegmentLine = '';
 
   function escapeHtml(text) {
     return text
@@ -226,8 +227,14 @@
     // Check if user is near bottom for auto-scroll
     const nearBottom = readerContainer.scrollHeight - readerContainer.scrollTop - readerContainer.clientHeight < 80;
 
-    if (segments.length < renderedSegmentCount) {
-      // Terminal was cleared — full rebuild
+    // Detect if content changed fundamentally (e.g. trust prompt → welcome banner)
+    // by checking if the first segment's content differs from what we rendered.
+    const firstLine = segments[0]?.lines?.[0] || '';
+    const contentChanged = firstLine !== lastFirstSegmentLine;
+    lastFirstSegmentLine = firstLine;
+
+    if (segments.length < renderedSegmentCount || (contentChanged && renderedSegmentCount > 0)) {
+      // Terminal content was rewritten or cleared — full rebuild
       readerMessages.innerHTML = '';
       renderedSegmentCount = 0;
     }
