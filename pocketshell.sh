@@ -26,6 +26,7 @@ usage() {
   echo "  setup                Check prerequisites and install dependencies"
   echo "  start                Start the server (default: local with auth)"
   echo "  stop                 Stop running server and tunnel"
+  echo "  test [suites]        Run tests (all, or comma-separated: auth,parsers,server)"
   echo "  help                 Show this help message"
   echo ""
   echo "Start options:"
@@ -39,6 +40,9 @@ usage() {
   echo -e "  ${CYAN}./pocketshell.sh start --remote${NC}         # Start with tunnel"
   echo -e "  ${CYAN}./pocketshell.sh start --local-noauth${NC}   # Start without auth"
   echo -e "  ${CYAN}./pocketshell.sh stop${NC}                  # Stop everything"
+  echo -e "  ${CYAN}./pocketshell.sh test${NC}                  # Run all tests"
+  echo -e "  ${CYAN}./pocketshell.sh test auth,parsers${NC}      # Run specific suites"
+  echo -e "  ${CYAN}./pocketshell.sh test -- --coverage${NC}     # Pass extra args to jest"
   echo ""
 }
 
@@ -167,6 +171,52 @@ cmd_start_remote() {
   cleanup
 }
 
+cmd_test() {
+  cd "$SCRIPT_DIR"
+  local suites=""
+  local extra_args=()
+
+  # Parse arguments: everything before -- is suite names, after -- goes to jest
+  local past_separator=false
+  for arg in "$@"; do
+    if [ "$arg" = "--" ]; then
+      past_separator=true
+      continue
+    fi
+    if $past_separator; then
+      extra_args+=("$arg")
+    else
+      suites="$arg"
+    fi
+  done
+
+  local jest_args=()
+
+  if [ -n "$suites" ]; then
+    # Check if it looks like a comma-separated list of known suite names
+    local all_known=true
+    IFS=',' read -ra suite_list <<< "$suites"
+    for s in "${suite_list[@]}"; do
+      case "$s" in
+        auth|parsers|server) ;;
+        *) all_known=false; break ;;
+      esac
+    done
+
+    if $all_known; then
+      # Resolve suite names to test file paths
+      for s in "${suite_list[@]}"; do
+        jest_args+=("tests/${s}.test.js")
+      done
+    else
+      # Treat as a regex pattern for jest
+      jest_args+=("--testPathPattern" "$suites")
+    fi
+  fi
+
+  NODE_ENV=test exec npx jest "${jest_args[@]}" "${extra_args[@]}"
+}
+
 # --- Main ---
 COMMAND="${1:-help}"
 shift || true
@@ -197,6 +247,9 @@ case "$COMMAND" in
     ;;
   stop)
     cmd_stop
+    ;;
+  test)
+    cmd_test "$@"
     ;;
   help|--help|-h)
     usage

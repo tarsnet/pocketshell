@@ -12,7 +12,13 @@ const NO_AUTH = args.includes('--no-auth');
 const portFlagIndex = args.indexOf('--port');
 const PORT = (portFlagIndex !== -1 && args[portFlagIndex + 1])
   ? parseInt(args[portFlagIndex + 1], 10)
-  : (process.env.PORT || 3000);
+  : (parseInt(process.env.PORT, 10) || 3000);
+
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  console.error(`[server] invalid port: ${PORT} (must be 1-65535)`);
+  process.exit(1);
+}
+
 const REPLAY_BUFFER_SIZE = 100 * 1024; // 100KB
 
 // --- Mode definitions ---
@@ -34,6 +40,20 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// --- Security headers ---
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+    "connect-src 'self' ws: wss:; " +
+    "img-src 'self' data:;"
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
+
 // --- PtySession class ---
 class PtySession {
   constructor(mode) {
@@ -45,7 +65,7 @@ class PtySession {
 
   spawn(cols = 120, rows = 30) {
     if (this.ptyProcess) {
-      try { this.ptyProcess.kill(); } catch (e) { /* ignore */ }
+      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.mode}] kill error on respawn:`, e.message); }
     }
     this.replayBuffer = '';
 
@@ -100,7 +120,7 @@ class PtySession {
 
   kill() {
     if (this.ptyProcess) {
-      try { this.ptyProcess.kill(); } catch (e) { /* ignore */ }
+      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.mode}] kill error:`, e.message); }
       this.ptyProcess = null;
     }
   }
@@ -227,6 +247,7 @@ wss.on('connection', (ws, req) => {
     try {
       msg = JSON.parse(raw);
     } catch (e) {
+      console.warn(`[ws:${mode}] invalid JSON from client:`, e.message);
       return;
     }
 
@@ -239,9 +260,13 @@ wss.on('connection', (ws, req) => {
 
       case 'resize':
         if (session.ptyProcess && msg.cols && msg.rows) {
+          const cols = Math.min(500, Math.max(1, Math.floor(msg.cols)));
+          const rows = Math.min(200, Math.max(1, Math.floor(msg.rows)));
           try {
-            session.ptyProcess.resize(Math.max(1, msg.cols), Math.max(1, msg.rows));
-          } catch (e) { /* ignore resize errors */ }
+            session.ptyProcess.resize(cols, rows);
+          } catch (e) {
+            console.warn(`[ws:${mode}] resize error:`, e.message);
+          }
         }
         break;
 

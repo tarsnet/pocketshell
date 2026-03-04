@@ -4,3 +4,11 @@ node_modules/
 .claude/
 *.log
 .DS_Store
+.env
+.env.*
+*.swp
+*.swo
+*~
+coverage/
+.nyc_output/
+*.tgz

@@ -4,11 +4,18 @@
   "description": "Multi-mode terminal in your browser — Claude Code, GitHub Copilot, or plain bash",
   "license": "MIT",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "setup": "bash prerequisites.sh",
     "start:remote": "bash pocketshell.sh start --remote",
-    "start:noauth": "node server.js --no-auth"
+    "start:noauth": "node server.js --no-auth",
+    "test": "NODE_ENV=test jest",
+    "test:auth": "NODE_ENV=test jest tests/auth.test.js",
+    "test:parsers": "NODE_ENV=test jest tests/parsers.test.js",
+    "test:server": "NODE_ENV=test jest tests/server.test.js"
   },
   "dependencies": {
     "express": "^4.21.0",
@@ -16,5 +23,8 @@
     "otplib": "^12.0.1",
     "qrcode": "^1.5.4",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }

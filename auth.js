@@ -294,3 +294,22 @@ module.exports = {
   loadConfig,
   parseCookies,
 };
+
+if (process.env.NODE_ENV === 'test') {
+  module.exports._internals = {
+    checkRateLimit,
+    recordFailedAttempt,
+    clearAttempts,
+    hashPassword,
+    verifyPassword,
+    generateTotpSecret,
+    verifyTotp,
+    createSessionToken,
+    verifySessionToken,
+    rateLimitMap,
+    CONFIG_PATH,
+    SESSION_DURATION,
+    MAX_ATTEMPTS,
+    LOCKOUT_DURATION,
+  };
+}
