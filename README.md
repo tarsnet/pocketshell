@@ -4,9 +4,19 @@
 
 **Your terminal, anywhere.** Run Claude Code, GitHub Copilot, or a plain bash shell from any browser — desktop or mobile.
 
-<!-- If you have a landing page screenshot, uncomment:
-![PocketShell Landing Page](docs/landing-page.png)
--->
+## Screenshots
+
+<p align="center">
+  <img src="docs/landing-page.png" alt="Landing Page" width="250" />
+  &nbsp;&nbsp;
+  <img src="docs/claude-mobile.png" alt="Claude Code on Mobile" width="250" />
+  &nbsp;&nbsp;
+  <img src="docs/copilot-mobile.png" alt="GitHub Copilot on Mobile" width="250" />
+</p>
+
+<p align="center">
+  <em>Landing page &bull; Claude Code &bull; GitHub Copilot — all on mobile via Dev Tunnels</em>
+</p>
 
 ## Why PocketShell?
 
