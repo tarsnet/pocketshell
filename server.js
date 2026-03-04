@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
@@ -18,6 +19,10 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   console.error(`[server] invalid port: ${PORT} (must be 1-65535)`);
   process.exit(1);
 }
+
+const REMOTE = args.includes('--remote');
+const BIND_HOST = (NO_AUTH && !REMOTE) ? '127.0.0.1' : '0.0.0.0';
+const SETUP_TOKEN = crypto.randomBytes(16).toString('hex');
 
 const REPLAY_BUFFER_SIZE = 100 * 1024; // 100KB
 
@@ -160,7 +165,7 @@ if (NO_AUTH) {
   app.use(express.static(path.join(__dirname, 'public')));
 } else {
   // Auth API routes (public, no auth required)
-  auth.setupRoutes(app);
+  auth.setupRoutes(app, SETUP_TOKEN);
 
   // Serve login page without auth — must come before authMiddleware
   app.get('/login.html', (req, res) => {
@@ -302,7 +307,7 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 // --- Start ---
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, BIND_HOST, () => {
   console.log('');
   console.log('  ┌────────────────────────────────────────────────────────────┐');
   console.log('  │                  PocketShell is running                    │');
@@ -311,10 +316,12 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  │  Claude:    http://localhost:${PORT}/desktop/claude             │`);
   console.log(`  │  Copilot:   http://localhost:${PORT}/desktop/copilot            │`);
   console.log(`  │  Terminal:  http://localhost:${PORT}/desktop/terminal            │`);
+  console.log(`  │  Bind:      ${BIND_HOST.padEnd(46)}│`);
   if (NO_AUTH) {
     console.log('  │  Auth:      DISABLED (--no-auth)                            │');
   } else if (!auth.isSetupComplete()) {
-    console.log(`  │  Setup:     http://localhost:${PORT}/login.html                │`);
+    console.log(`  │  Setup:     http://localhost:${PORT}/login.html?token=${SETUP_TOKEN}  │`);
+    console.log(`  │  Token:     ${SETUP_TOKEN}  │`);
   }
   console.log('  └────────────────────────────────────────────────────────────┘');
   console.log('');

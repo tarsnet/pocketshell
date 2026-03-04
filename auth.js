@@ -10,6 +10,9 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
 const SERVICE_NAME = 'ClaudeTerminal';
 
+// --- Active session store (in-memory) ---
+const activeSessions = new Set();
+
 // --- Rate limiting (in-memory) ---
 const rateLimitMap = new Map();
 
@@ -96,7 +99,9 @@ function createSessionToken(sessionSecret) {
   const payload = JSON.stringify({ ts: Date.now() });
   const data = Buffer.from(payload).toString('base64url');
   const sig = crypto.createHmac('sha256', sessionSecret).update(data).digest('hex');
-  return `${data}.${sig}`;
+  const token = `${data}.${sig}`;
+  activeSessions.add(token);
+  return token;
 }
 
 function verifySessionToken(token, sessionSecret) {
@@ -105,7 +110,11 @@ function verifySessionToken(token, sessionSecret) {
   if (parts.length !== 2) return false;
   const [data, sig] = parts;
   const expected = crypto.createHmac('sha256', sessionSecret).update(data).digest('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return false;
+  const sigBuf = Buffer.from(sig, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expectedBuf.length) return false;
+  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
+  if (!activeSessions.has(token)) return false;
   try {
     const payload = JSON.parse(Buffer.from(data, 'base64url').toString());
     return (Date.now() - payload.ts) < SESSION_DURATION;
@@ -149,7 +158,17 @@ function authenticateWs(req) {
 }
 
 // --- Route setup ---
-function setupRoutes(app) {
+function setupRoutes(app, setupToken) {
+  // Helper: validate setup token from query param or header
+  function requireSetupToken(req, res) {
+    const token = req.query.token || req.headers['x-setup-token'];
+    if (token !== setupToken) {
+      res.status(403).json({ error: 'Invalid or missing setup token' });
+      return false;
+    }
+    return true;
+  }
+
   // GET /auth/status — public, returns setup state
   app.get('/auth/status', (req, res) => {
     const config = loadConfig();
@@ -167,6 +186,7 @@ function setupRoutes(app) {
     if (isSetupComplete()) {
       return res.status(403).json({ error: 'Setup already complete' });
     }
+    if (!requireSetupToken(req, res)) return;
     // Generate a temporary secret (stored in memory until confirmed)
     if (!app.locals._pendingSecret) {
       app.locals._pendingSecret = generateTotpSecret();
@@ -187,6 +207,7 @@ function setupRoutes(app) {
     if (isSetupComplete()) {
       return res.status(403).json({ error: 'Setup already complete' });
     }
+    if (!requireSetupToken(req, res)) return;
     const { password, totpCode } = req.body;
     if (!password || password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -264,6 +285,8 @@ function setupRoutes(app) {
 
   // POST /auth/logout
   app.post('/auth/logout', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    if (cookies.session) activeSessions.delete(cookies.session);
     res.clearCookie('session');
     res.json({ success: true });
   });
@@ -281,6 +304,7 @@ function setupRoutes(app) {
     try {
       fs.unlinkSync(CONFIG_PATH);
     } catch (e) { /* ignore */ }
+    activeSessions.clear();
     res.clearCookie('session');
     res.json({ success: true });
   });
@@ -307,6 +331,7 @@ if (process.env.NODE_ENV === 'test') {
     createSessionToken,
     verifySessionToken,
     rateLimitMap,
+    activeSessions,
     CONFIG_PATH,
     SESSION_DURATION,
     MAX_ATTEMPTS,

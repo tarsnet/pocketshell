@@ -277,6 +277,7 @@
     const loadingCard = document.getElementById('loading-card');
     const setupView = document.getElementById('setup-view');
     const loginView = document.getElementById('login-view');
+    const setupToken = new URLSearchParams(window.location.search).get('token') || '';
 
     async function init() {
       try {
@@ -304,7 +305,7 @@
     async function showSetup() {
       setupView.style.display = 'block';
       try {
-        const res = await fetch('/auth/setup-info');
+        const res = await fetch('/auth/setup-info?token=' + encodeURIComponent(setupToken));
         const data = await res.json();
         document.getElementById('qr-image').src = data.qrDataUrl;
         document.getElementById('secret-display').textContent = data.secret;
@@ -333,7 +334,7 @@
       btn.innerHTML = '<span class="spinner"></span> Setting up...';
 
       try {
-        const res = await fetch('/auth/setup', {
+        const res = await fetch('/auth/setup?token=' + encodeURIComponent(setupToken), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password, totpCode }),

@@ -17,6 +17,7 @@ const {
   createSessionToken,
   verifySessionToken,
   rateLimitMap,
+  activeSessions,
   SESSION_DURATION,
   MAX_ATTEMPTS,
   LOCKOUT_DURATION,
@@ -24,6 +25,7 @@ const {
 
 afterEach(() => {
   rateLimitMap.clear();
+  activeSessions.clear();
 });
 
 // --- Password hashing ---
@@ -152,6 +154,42 @@ describe('session tokens', () => {
     const token = createSessionToken(secret);
     const parts = token.split('.');
     expect(parts).toHaveLength(2);
+  });
+});
+
+// --- Session revocation ---
+
+describe('session revocation', () => {
+  const secret = crypto.randomBytes(32).toString('hex');
+
+  test('createSessionToken adds token to activeSessions', () => {
+    const token = createSessionToken(secret);
+    expect(activeSessions.has(token)).toBe(true);
+  });
+
+  test('removing token from activeSessions invalidates it', () => {
+    const token = createSessionToken(secret);
+    expect(verifySessionToken(token, secret)).toBe(true);
+    activeSessions.delete(token);
+    expect(verifySessionToken(token, secret)).toBe(false);
+  });
+
+  test('clearing activeSessions invalidates all tokens', () => {
+    const t1 = createSessionToken(secret);
+    const t2 = createSessionToken(secret);
+    expect(verifySessionToken(t1, secret)).toBe(true);
+    expect(verifySessionToken(t2, secret)).toBe(true);
+    activeSessions.clear();
+    expect(verifySessionToken(t1, secret)).toBe(false);
+    expect(verifySessionToken(t2, secret)).toBe(false);
+  });
+
+  test('token with mismatched signature length returns false (no crash)', () => {
+    // Craft a token with a short signature to trigger the length check
+    const payload = JSON.stringify({ ts: Date.now() });
+    const data = Buffer.from(payload).toString('base64url');
+    const badToken = `${data}.abc`;
+    expect(verifySessionToken(badToken, secret)).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 const http = require('http');
+const crypto = require('crypto');
 const express = require('express');
 
 // --- Resize bounds clamping (unit tests for the logic) ---
@@ -135,5 +136,41 @@ describe('port validation', () => {
     expect(isValidPort(65536)).toBe(false);
     expect(isValidPort(NaN)).toBe(false);
     expect(isValidPort(3.14)).toBe(false);
+  });
+});
+
+// --- Bind address logic ---
+
+describe('bind address logic', () => {
+  function computeBindHost(noAuth, remote) {
+    return (noAuth && !remote) ? '127.0.0.1' : '0.0.0.0';
+  }
+
+  test('no-auth without remote binds to 127.0.0.1', () => {
+    expect(computeBindHost(true, false)).toBe('127.0.0.1');
+  });
+
+  test('no-auth with remote binds to 0.0.0.0', () => {
+    expect(computeBindHost(true, true)).toBe('0.0.0.0');
+  });
+
+  test('auth mode binds to 0.0.0.0 regardless of remote', () => {
+    expect(computeBindHost(false, false)).toBe('0.0.0.0');
+    expect(computeBindHost(false, true)).toBe('0.0.0.0');
+  });
+});
+
+// --- Setup token ---
+
+describe('setup token', () => {
+  test('generated token is a 32-char hex string', () => {
+    const token = crypto.randomBytes(16).toString('hex');
+    expect(token).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  test('each generation produces a unique token', () => {
+    const t1 = crypto.randomBytes(16).toString('hex');
+    const t2 = crypto.randomBytes(16).toString('hex');
+    expect(t1).not.toBe(t2);
   });
 });

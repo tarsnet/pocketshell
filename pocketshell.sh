@@ -133,14 +133,16 @@ cmd_start_remote() {
   fi
 
   echo -e "${BOLD}Starting PocketShell (remote access)...${NC}"
+  echo -e "${YELLOW}Note: If setup is not yet complete, the setup token will appear in the server banner above.${NC}"
+  echo -e "${YELLOW}You must include ?token=<TOKEN> in the login URL to access setup.${NC}"
   echo ""
 
   # Clean up old pidfile
   rm -f "$PIDFILE"
 
-  # Start server in background
+  # Start server in background with --remote flag
   cd "$SCRIPT_DIR"
-  node server.js &
+  node server.js --remote &
   local server_pid=$!
   save_pid "$server_pid"
   echo -e "  Server started (PID: ${CYAN}${server_pid}${NC})"
