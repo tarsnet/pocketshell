@@ -5,6 +5,7 @@ const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const auth = require('./auth');
 const projects = require('./projects');
 
@@ -35,6 +36,23 @@ const MODES = {
 };
 
 const VALID_MODES = new Set(Object.keys(MODES));
+
+// --- Detect which CLIs are installed (cached at startup) ---
+const modeAvailability = {};
+for (const [mode, config] of Object.entries(MODES)) {
+  if (!config.cmd) {
+    // terminal mode — always available
+    modeAvailability[mode] = true;
+  } else {
+    try {
+      execFileSync('which', [config.cmd], { timeout: 3000, stdio: 'ignore' });
+      modeAvailability[mode] = true;
+    } catch {
+      modeAvailability[mode] = false;
+      console.log(`[server] ${config.label} (${config.cmd}) not found — mode disabled`);
+    }
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -173,9 +191,12 @@ function getOrCreateSession(mode, projectId = 'home', cwd = null) {
 }
 
 // Eagerly spawn PTYs for the last-used project (or home) at startup
+// Only spawn modes whose CLI is actually installed
 const lastProject = projects.getLastProject();
 for (const mode of Object.keys(MODES)) {
-  getOrCreateSession(mode, lastProject);
+  if (modeAvailability[mode]) {
+    getOrCreateSession(mode, lastProject);
+  }
 }
 
 // --- Redirect old direct-access URLs to landing page ---
@@ -217,6 +238,11 @@ if (NO_AUTH) {
 
 // --- Project API routes ---
 function setupProjectRoutes(app) {
+  // Which modes are available
+  app.get('/api/modes', (req, res) => {
+    res.json(modeAvailability);
+  });
+
   // Bootstrap data: last project, recents, repos
   app.get('/api/projects', (req, res) => {
     res.json(projects.getBootstrapData());

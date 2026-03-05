@@ -510,6 +510,23 @@
         card.href = '/' + view + '/' + card.dataset.mode;
       });
 
+      // Check which modes are available and disable unavailable ones
+      fetch('/api/modes')
+        .then(function (r) { return r.json(); })
+        .then(function (modes) {
+          document.querySelectorAll('.mode-card[data-mode]').forEach(function (card) {
+            var mode = card.dataset.mode;
+            if (modes[mode] === false) {
+              card.classList.add('mode-disabled');
+              card.removeAttribute('href');
+              card.onclick = function (e) { e.preventDefault(); };
+              var desc = card.querySelector('.mode-desc');
+              if (desc) desc.textContent = 'Not installed';
+            }
+          });
+        })
+        .catch(function () { /* ignore — all cards stay enabled */ });
+
       loadBootstrapAndShow();
     })();
   </script>
