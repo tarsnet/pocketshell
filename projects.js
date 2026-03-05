@@ -215,19 +215,41 @@ function parseWorktreeList(porcelainOutput) {
   return worktrees;
 }
 
+const SAFE_BRANCH_RE = /^[a-zA-Z0-9._\/-]+$/;
+
+function validateBranchName(name) {
+  if (!name || typeof name !== 'string') return false;
+  if (!SAFE_BRANCH_RE.test(name)) return false;
+  if (name.startsWith('-')) return false;       // prevent git argument injection
+  if (name.includes('..')) return false;         // prevent path traversal
+  return true;
+}
+
 async function createWorktree(repoPath, branch, newBranch) {
+  if (!validateBranchName(branch)) {
+    throw new Error('Invalid branch name');
+  }
+  if (newBranch && !validateBranchName(newBranch)) {
+    throw new Error('Invalid new branch name');
+  }
+
   const resolved = path.resolve(repoPath);
   const parentDir = path.dirname(resolved);
   const repoName = path.basename(resolved);
 
   if (newBranch) {
-    // Create new branch in a sibling directory
     const worktreeDir = path.join(parentDir, `${repoName}-${newBranch}`);
+    // Verify worktree dir stays within parent
+    if (!path.resolve(worktreeDir).startsWith(parentDir + path.sep)) {
+      throw new Error('Invalid branch name');
+    }
     await gitExec(resolved, ['worktree', 'add', '-b', newBranch, worktreeDir, branch]);
     return worktreeDir;
   } else {
-    // Checkout existing branch in a sibling directory
     const worktreeDir = path.join(parentDir, `${repoName}-${branch}`);
+    if (!path.resolve(worktreeDir).startsWith(parentDir + path.sep)) {
+      throw new Error('Invalid branch name');
+    }
     await gitExec(resolved, ['worktree', 'add', worktreeDir, branch]);
     return worktreeDir;
   }
@@ -276,6 +298,12 @@ function discoverRepos() {
 
 // --- Validation ---
 
+function isRegisteredRepo(repoPath) {
+  const resolved = path.resolve(repoPath);
+  const repos = getRepos();
+  return repos.includes(resolved);
+}
+
 function validateProjectPath(projectId) {
   if (projectId === 'home') return true;
 
@@ -287,11 +315,22 @@ function validateProjectPath(projectId) {
   // Must exist
   if (!fs.existsSync(decoded)) return false;
 
+  // Resolve symlinks to prevent symlink-based escapes
+  let resolved;
+  try {
+    resolved = fs.realpathSync(decoded);
+  } catch (e) {
+    return false;
+  }
+
   // Must be within a registered repo (or be a registered repo)
   const config = loadConfig();
   const repos = config?.repos || [];
-  const resolved = path.resolve(decoded);
-  return repos.some(repo => resolved === repo || resolved.startsWith(repo + path.sep));
+  return repos.some(repo => {
+    let realRepo;
+    try { realRepo = fs.realpathSync(repo); } catch { realRepo = repo; }
+    return resolved === realRepo || resolved.startsWith(realRepo + path.sep);
+  });
 }
 
 // --- Bootstrap data for API ---
@@ -337,7 +376,9 @@ module.exports = {
   listWorktrees,
   parseWorktreeList,
   createWorktree,
+  isRegisteredRepo,
   validateProjectPath,
+  validateBranchName,
   getBootstrapData,
   discoverRepos,
   setConfigPath,

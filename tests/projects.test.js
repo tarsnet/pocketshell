@@ -302,6 +302,50 @@ describe('validateProjectPath', () => {
   });
 });
 
+// --- Branch name validation ---
+
+describe('validateBranchName', () => {
+  test('accepts normal branch names', () => {
+    expect(projects.validateBranchName('main')).toBe(true);
+    expect(projects.validateBranchName('feature/xyz')).toBe(true);
+    expect(projects.validateBranchName('v2.1.0')).toBe(true);
+    expect(projects.validateBranchName('my_branch')).toBe(true);
+  });
+
+  test('rejects names starting with -', () => {
+    expect(projects.validateBranchName('--orphan')).toBe(false);
+    expect(projects.validateBranchName('-b')).toBe(false);
+  });
+
+  test('rejects names with ..', () => {
+    expect(projects.validateBranchName('../../etc')).toBe(false);
+    expect(projects.validateBranchName('foo/../bar')).toBe(false);
+  });
+
+  test('rejects names with special chars', () => {
+    expect(projects.validateBranchName('branch;rm -rf')).toBe(false);
+    expect(projects.validateBranchName('branch name')).toBe(false);
+    expect(projects.validateBranchName('')).toBe(false);
+    expect(projects.validateBranchName(null)).toBe(false);
+  });
+});
+
+// --- isRegisteredRepo ---
+
+describe('isRegisteredRepo', () => {
+  test('returns false for unregistered repo', () => {
+    expect(projects.isRegisteredRepo('/tmp/not-registered')).toBe(false);
+  });
+
+  test('returns true for registered repo', () => {
+    const repoDir = path.join(tmpDir, 'regcheck');
+    fs.mkdirSync(repoDir);
+    fs.mkdirSync(path.join(repoDir, '.git'));
+    projects.registerRepo(repoDir);
+    expect(projects.isRegisteredRepo(repoDir)).toBe(true);
+  });
+});
+
 // --- Bootstrap data ---
 
 describe('getBootstrapData', () => {

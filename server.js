@@ -23,10 +23,17 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
 }
 
 const REMOTE = args.includes('--remote');
+
+if (NO_AUTH && REMOTE) {
+  console.error('[server] --no-auth and --remote cannot be used together (would expose unauthenticated terminal to the internet)');
+  process.exit(1);
+}
+
 const BIND_HOST = (NO_AUTH && !REMOTE) ? '127.0.0.1' : '0.0.0.0';
 const SETUP_TOKEN = crypto.randomBytes(16).toString('hex');
 
 const REPLAY_BUFFER_SIZE = 100 * 1024; // 100KB
+const MAX_SESSIONS = 50;
 
 // --- Mode definitions ---
 const MODES = {
@@ -179,6 +186,10 @@ function getOrCreateSession(mode, projectId = 'home', cwd = null) {
   const sessionKey = `${projectId}:${mode}`;
   let session = sessions.get(sessionKey);
   if (!session) {
+    if (sessions.size >= MAX_SESSIONS) {
+      console.warn(`[server] session limit reached (${MAX_SESSIONS}), reusing home:${mode}`);
+      return getOrCreateSession(mode, 'home');
+    }
     const sessionCwd = resolveProjectCwd(projectId, cwd);
     session = new PtySession(mode, sessionKey, sessionCwd);
     sessions.set(sessionKey, session);
@@ -254,7 +265,8 @@ function setupProjectRoutes(app) {
       const repos = await projects.discoverRepos();
       res.json({ repos });
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[api] discover error:', e.message);
+      res.status(500).json({ error: 'Failed to scan for repos' });
     }
   });
 
@@ -282,42 +294,54 @@ function setupProjectRoutes(app) {
     res.json({ ok: true });
   });
 
-  // List branches for a repo
+  // List branches for a repo (must be a registered repo)
   app.get('/api/projects/branches', async (req, res) => {
     try {
       const repo = req.query.repo;
       if (!repo) return res.status(400).json({ error: 'repo query param required' });
+      if (!projects.isRegisteredRepo(repo)) {
+        return res.status(403).json({ error: 'Repository not registered' });
+      }
       const branches = await projects.listBranches(repo);
       res.json({ branches });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      console.error('[api] branches error:', e.message);
+      res.status(400).json({ error: 'Failed to list branches' });
     }
   });
 
-  // List worktrees for a repo
+  // List worktrees for a repo (must be a registered repo)
   app.get('/api/projects/worktrees', async (req, res) => {
     try {
       const repo = req.query.repo;
       if (!repo) return res.status(400).json({ error: 'repo query param required' });
+      if (!projects.isRegisteredRepo(repo)) {
+        return res.status(403).json({ error: 'Repository not registered' });
+      }
       const worktrees = await projects.listWorktrees(repo);
       res.json({ worktrees });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      console.error('[api] worktrees error:', e.message);
+      res.status(400).json({ error: 'Failed to list worktrees' });
     }
   });
 
-  // Create a worktree
+  // Create a worktree (must be a registered repo)
   app.post('/api/projects/worktrees', async (req, res) => {
     try {
       const { repoPath, branch, newBranch } = req.body;
       if (!repoPath || !branch) {
         return res.status(400).json({ error: 'repoPath and branch are required' });
       }
+      if (!projects.isRegisteredRepo(repoPath)) {
+        return res.status(403).json({ error: 'Repository not registered' });
+      }
       const worktreeDir = await projects.createWorktree(repoPath, branch, newBranch);
       const projectId = projects.pathToProjectId(worktreeDir);
       res.json({ ok: true, worktreePath: worktreeDir, projectId });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      console.error('[api] create worktree error:', e.message);
+      res.status(400).json({ error: 'Failed to create worktree' });
     }
   });
 
@@ -355,7 +379,7 @@ function serveModeHtml(template, mode, projectId, res) {
   // Pre-spawn the PTY session so it's ready by the time WebSocket connects
   getOrCreateSession(mode, projectId);
 
-  const modeScript = `<script>window.POCKETSHELL_MODE="${mode}";window.POCKETSHELL_PROJECT="${projectId}";</script>`;
+  const modeScript = `<script>window.POCKETSHELL_MODE=${JSON.stringify(mode)};window.POCKETSHELL_PROJECT=${JSON.stringify(projectId)};</script>`;
   let html = template.replace('</head>', modeScript + '\n</head>');
   // Cache-bust local assets to avoid stale cached 404s
   html = html.replace(/((?:src|href)="\/[^"]+\.(?:js|css))(")/g, `$1?v=${startupTs}$2`);
@@ -366,17 +390,24 @@ function serveModeHtml(template, mode, projectId, res) {
 
 app.get('/desktop/:mode(claude|copilot|terminal)', (req, res) => {
   const projectId = req.query.project || 'home';
+  if (projectId !== 'home' && !projects.validateProjectPath(projectId)) {
+    return res.redirect('/');
+  }
   serveModeHtml(desktopHtml, req.params.mode, projectId, res);
 });
 
 app.get('/mobile/:mode(claude|copilot|terminal)', (req, res) => {
   const projectId = req.query.project || 'home';
+  if (projectId !== 'home' && !projects.validateProjectPath(projectId)) {
+    return res.redirect('/');
+  }
   serveModeHtml(mobileHtml, req.params.mode, projectId, res);
 });
 
 // --- WebSocket Server (with auth + path routing) ---
 const wss = new WebSocketServer({
   server,
+  maxPayload: 64 * 1024, // 64KB
   verifyClient: (info) => {
     // Validate WebSocket path: must be /ws/{mode} with optional ?project= query
     const parsed = new URL(info.req.url, 'http://localhost');
