@@ -32,9 +32,10 @@ body {
 .landing-subtitle {
   font-size: 1rem;
   color: #565f89;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
 }
 
+/* --- Mode grid (Screen 3) --- */
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -81,7 +82,215 @@ body {
   color: #565f89;
 }
 
-/* Responsive: stack on small screens */
+/* --- Continue button (Screen 1) --- */
+.btn-continue {
+  display: block;
+  width: 100%;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: #7aa2f7;
+  color: #1a1b26;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.btn-continue:hover {
+  background: #89b4fa;
+  transform: translateY(-1px);
+}
+
+.btn-continue:active {
+  transform: translateY(0);
+}
+
+/* --- Section labels --- */
+.section-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #565f89;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.8rem;
+  text-align: left;
+}
+
+/* --- Recents list --- */
+.recents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #24283b;
+  border: 1px solid #33467c;
+  border-radius: 8px;
+  color: #c0caf5;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.recent-item:hover {
+  background: #292e42;
+  border-color: #7aa2f7;
+}
+
+.recent-item.selected-item {
+  background: #292e42;
+  border-color: #7aa2f7;
+}
+
+/* --- Grouped repo tree --- */
+.group-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #565f89;
+  text-align: left;
+  padding: 0.5rem 0 0.2rem 0;
+  margin-top: 0.4rem;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+.group-header:first-child {
+  margin-top: 0;
+}
+
+.group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.2rem;
+}
+
+.group-repo-item {
+  padding: 0.5rem 0.8rem;
+  margin-left: 0.8rem;
+}
+
+
+.recent-label {
+  font-weight: 500;
+}
+
+.recent-time {
+  font-size: 0.8rem;
+  color: #565f89;
+}
+
+/* --- Action row --- */
+.action-row {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+/* --- Buttons --- */
+.btn-primary {
+  padding: 0.6rem 1.2rem;
+  background: #7aa2f7;
+  color: #1a1b26;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.btn-primary:hover {
+  background: #89b4fa;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-secondary {
+  padding: 0.6rem 1.2rem;
+  background: #24283b;
+  color: #c0caf5;
+  border: 1px solid #33467c;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-secondary:hover {
+  background: #292e42;
+  border-color: #7aa2f7;
+}
+
+.btn-muted {
+  color: #565f89;
+}
+
+/* --- Form row --- */
+.form-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.input-field {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  background: #1a1b26;
+  border: 1px solid #33467c;
+  border-radius: 8px;
+  color: #c0caf5;
+  font-size: 0.95rem;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: #7aa2f7;
+}
+
+.input-field::placeholder {
+  color: #414868;
+}
+
+/* --- Status text --- */
+.status-text {
+  color: #565f89;
+  font-size: 0.85rem;
+  text-align: left;
+  margin-bottom: 0.8rem;
+}
+
+/* --- Error text --- */
+.error-text {
+  color: #f7768e;
+  font-size: 0.85rem;
+  text-align: left;
+  margin-bottom: 0.8rem;
+}
+
+/* --- Step list (repos, worktrees, branches) --- */
+.step-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 0.8rem;
+}
+
+/* --- Responsive: stack on small screens --- */
 @media (max-width: 540px) {
   .mode-grid {
     grid-template-columns: 1fr;
@@ -94,5 +303,13 @@ body {
 
   .landing-title {
     font-size: 1.7rem;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .action-row {
+    flex-direction: column;
   }
 }

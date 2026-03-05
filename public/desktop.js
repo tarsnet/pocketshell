@@ -2,6 +2,26 @@
   const container = document.getElementById('terminal-container');
   const indicator = document.getElementById('status-indicator');
   const statusText = document.getElementById('status-text');
+  const statusProject = document.getElementById('status-project');
+
+  // Show project label in status bar
+  const project = window.POCKETSHELL_PROJECT || 'home';
+  if (project && project !== 'home') {
+    try {
+      const decoded = atob(project.replace(/-/g, '+').replace(/_/g, '/'));
+      const parts = decoded.split('/');
+      statusProject.textContent = parts[parts.length - 1] || decoded;
+    } catch (e) {
+      statusProject.textContent = project;
+    }
+    statusProject.style.cursor = 'pointer';
+    statusProject.style.marginLeft = '0.5em';
+    statusProject.style.color = '#7aa2f7';
+    statusProject.title = 'Click to change project';
+    statusProject.addEventListener('click', function () {
+      window.location.href = '/';
+    });
+  }
 
   const term = createTerminal(container, { fontSize: 14 });
 

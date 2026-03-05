@@ -60,7 +60,9 @@ function connectWebSocket(term, callbacks = {}) {
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const mode = window.POCKETSHELL_MODE || 'terminal';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/${mode}`);
+    const project = window.POCKETSHELL_PROJECT || 'home';
+    const wsUrl = `${proto}//${location.host}/ws/${mode}?project=${encodeURIComponent(project)}`;
+    const ws = new WebSocket(wsUrl);
     state.ws = ws;
 
     ws.onopen = () => {

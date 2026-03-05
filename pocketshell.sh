@@ -26,19 +26,21 @@ usage() {
   echo "  setup                Check prerequisites and install dependencies"
   echo "  start                Start the server (default: local with auth)"
   echo "  stop                 Stop running server and tunnel"
-  echo "  test [suites]        Run tests (all, or comma-separated: auth,parsers,server)"
+  echo "  test [suites]        Run tests (all, or comma-separated: auth,parsers,server,projects)"
   echo "  help                 Show this help message"
   echo ""
   echo "Start options:"
   echo "  --local              Start server locally with auth (default)"
   echo "  --remote             Start server + devtunnel for remote access"
   echo "  --local-noauth       Start server without auth (trusted network only)"
+  echo "  --force              Stop any running instance first, then start"
   echo ""
   echo "Examples:"
   echo -e "  ${CYAN}./pocketshell.sh setup${NC}                 # First-time setup"
   echo -e "  ${CYAN}./pocketshell.sh start${NC}                 # Start locally"
   echo -e "  ${CYAN}./pocketshell.sh start --remote${NC}         # Start with tunnel"
   echo -e "  ${CYAN}./pocketshell.sh start --local-noauth${NC}   # Start without auth"
+  echo -e "  ${CYAN}./pocketshell.sh start --force${NC}          # Force restart"
   echo -e "  ${CYAN}./pocketshell.sh stop${NC}                  # Stop everything"
   echo -e "  ${CYAN}./pocketshell.sh test${NC}                  # Run all tests"
   echo -e "  ${CYAN}./pocketshell.sh test auth,parsers${NC}      # Run specific suites"
@@ -52,6 +54,46 @@ cmd_setup() {
 
 save_pid() {
   echo "$1" >> "$PIDFILE"
+}
+
+# Check if a PocketShell server is already running.
+# Returns 0 if running, 1 if not.
+is_running() {
+  # Check pidfile first
+  if [ -f "$PIDFILE" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        return 0
+      fi
+    done < "$PIDFILE"
+  fi
+
+  # Check for stray server processes
+  if pgrep -f 'node server.js' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Require that no instance is running, or --force was given.
+# Usage: require_not_running "$force"
+require_not_running() {
+  local force="$1"
+
+  if is_running; then
+    if [ "$force" = "true" ]; then
+      echo -e "${YELLOW}Stopping existing PocketShell instance...${NC}"
+      cmd_stop
+      # Brief wait for port to free up
+      sleep 1
+    else
+      echo -e "${RED}PocketShell is already running.${NC}"
+      echo -e "  Use ${CYAN}./pocketshell.sh stop${NC} first, or add ${CYAN}--force${NC} to auto-restart."
+      echo -e "  Example: ${CYAN}./pocketshell.sh start --local-noauth --force${NC}"
+      exit 1
+    fi
+  fi
 }
 
 cmd_stop() {
@@ -88,14 +130,21 @@ cmd_stop() {
     fi
   done
 
+  # Always clean up stale pidfile
+  rm -f "$PIDFILE"
+
   if [ "$killed" -eq 0 ]; then
     echo -e "${YELLOW}No running PocketShell processes found.${NC}"
   else
+    # Wait briefly for processes to fully exit
+    sleep 0.5
     echo -e "${GREEN}Stopped.${NC}"
   fi
 }
 
 cmd_start_local() {
+  local force="$1"; shift
+  require_not_running "$force"
   echo -e "${BOLD}Starting PocketShell (local, with auth)...${NC}"
   echo ""
   cd "$SCRIPT_DIR"
@@ -103,6 +152,8 @@ cmd_start_local() {
 }
 
 cmd_start_noauth() {
+  local force="$1"; shift
+  require_not_running "$force"
   echo -e "${BOLD}Starting PocketShell (local, no auth)...${NC}"
   echo -e "${YELLOW}Warning: Authentication is disabled. Only use on trusted networks.${NC}"
   echo ""
@@ -111,6 +162,9 @@ cmd_start_noauth() {
 }
 
 cmd_start_remote() {
+  local force="$1"
+  require_not_running "$force"
+
   # Check devtunnel is available
   if ! command -v devtunnel &>/dev/null; then
     echo -e "${RED}Error: devtunnel CLI not found.${NC}"
@@ -200,7 +254,7 @@ cmd_test() {
     IFS=',' read -ra suite_list <<< "$suites"
     for s in "${suite_list[@]}"; do
       case "$s" in
-        auth|parsers|server) ;;
+        auth|parsers|server|projects) ;;
         *) all_known=false; break ;;
       esac
     done
@@ -228,22 +282,34 @@ case "$COMMAND" in
     cmd_setup
     ;;
   start)
-    MODE="${1:---local}"
-    shift || true
-    case "$MODE" in
+    # Collect mode and --force from args (order-independent)
+    START_MODE="--local"
+    FORCE="false"
+    remaining_args=()
+
+    for arg in "$@"; do
+      case "$arg" in
+        --local|--remote|--local-noauth)
+          START_MODE="$arg"
+          ;;
+        --force)
+          FORCE="true"
+          ;;
+        *)
+          remaining_args+=("$arg")
+          ;;
+      esac
+    done
+
+    case "$START_MODE" in
       --local)
-        cmd_start_local "$@"
+        cmd_start_local "$FORCE" "${remaining_args[@]+"${remaining_args[@]}"}"
         ;;
       --remote)
-        cmd_start_remote
+        cmd_start_remote "$FORCE"
         ;;
       --local-noauth)
-        cmd_start_noauth "$@"
-        ;;
-      *)
-        echo -e "${RED}Unknown start option: ${MODE}${NC}"
-        echo "Use: --local, --remote, or --local-noauth"
-        exit 1
+        cmd_start_noauth "$FORCE" "${remaining_args[@]+"${remaining_args[@]}"}"
         ;;
     esac
     ;;

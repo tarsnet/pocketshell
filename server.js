@@ -6,6 +6,7 @@ const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
 const auth = require('./auth');
+const projects = require('./projects');
 
 // --- CLI flags ---
 const args = process.argv.slice(2);
@@ -61,8 +62,10 @@ app.use((req, res, next) => {
 
 // --- PtySession class ---
 class PtySession {
-  constructor(mode) {
+  constructor(mode, sessionKey, cwd) {
     this.mode = mode;
+    this.sessionKey = sessionKey;
+    this.cwd = cwd || process.env.HOME || process.cwd();
     this.ptyProcess = null;
     this.replayBuffer = '';
     this.clients = new Set();
@@ -70,9 +73,16 @@ class PtySession {
 
   spawn(cols = 120, rows = 30) {
     if (this.ptyProcess) {
-      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.mode}] kill error on respawn:`, e.message); }
+      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.sessionKey}] kill error on respawn:`, e.message); }
     }
     this.replayBuffer = '';
+
+    // Validate cwd exists — fall back to HOME if it doesn't
+    const home = process.env.HOME || process.cwd();
+    if (!fs.existsSync(this.cwd)) {
+      console.warn(`[pty:${this.sessionKey}] cwd does not exist (${this.cwd}), falling back to ${home}`);
+      this.cwd = home;
+    }
 
     const shell = process.env.SHELL || '/bin/bash';
     const env = { ...process.env, TERM: 'xterm-256color' };
@@ -91,11 +101,11 @@ class PtySession {
       name: 'xterm-256color',
       cols,
       rows,
-      cwd: process.env.HOME || process.cwd(),
+      cwd: this.cwd,
       env,
     });
 
-    console.log(`[pty:${this.mode}] spawned (pid ${this.ptyProcess.pid}), cols=${cols} rows=${rows}`);
+    console.log(`[pty:${this.sessionKey}] spawned (pid ${this.ptyProcess.pid}), cols=${cols} rows=${rows}, cwd=${this.cwd}`);
 
     this.ptyProcess.onData((data) => {
       this.replayBuffer += data;
@@ -112,7 +122,7 @@ class PtySession {
     });
 
     this.ptyProcess.onExit(({ exitCode, signal }) => {
-      console.log(`[pty:${this.mode}] exited (code=${exitCode}, signal=${signal})`);
+      console.log(`[pty:${this.sessionKey}] exited (code=${exitCode}, signal=${signal})`);
       const msg = JSON.stringify({ type: 'exit', exitCode, signal });
       for (const ws of this.clients) {
         if (ws.readyState === 1) {
@@ -125,20 +135,35 @@ class PtySession {
 
   kill() {
     if (this.ptyProcess) {
-      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.mode}] kill error:`, e.message); }
+      try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.sessionKey}] kill error:`, e.message); }
       this.ptyProcess = null;
     }
   }
 }
 
 // --- Sessions Map ---
+// Key format: "projectId:mode" (e.g. "home:claude", "L2hvbWUv...:terminal")
 const sessions = new Map();
 
-function getOrCreateSession(mode) {
-  let session = sessions.get(mode);
+function resolveProjectCwd(projectId, cwd) {
+  const home = process.env.HOME || process.cwd();
+  if (cwd) return cwd;
+  if (projectId === 'home') return home;
+  try {
+    const decoded = projects.projectIdToPath(projectId);
+    return fs.existsSync(decoded) ? decoded : home;
+  } catch (e) {
+    return home;
+  }
+}
+
+function getOrCreateSession(mode, projectId = 'home', cwd = null) {
+  const sessionKey = `${projectId}:${mode}`;
+  let session = sessions.get(sessionKey);
   if (!session) {
-    session = new PtySession(mode);
-    sessions.set(mode, session);
+    const sessionCwd = resolveProjectCwd(projectId, cwd);
+    session = new PtySession(mode, sessionKey, sessionCwd);
+    sessions.set(sessionKey, session);
     session.spawn();
   } else if (!session.ptyProcess) {
     // PTY exited; respawn
@@ -147,10 +172,10 @@ function getOrCreateSession(mode) {
   return session;
 }
 
-// Eagerly spawn all modes at startup so they're fully ready by the time
-// a user navigates through auth/landing page.
+// Eagerly spawn PTYs for the last-used project (or home) at startup
+const lastProject = projects.getLastProject();
 for (const mode of Object.keys(MODES)) {
-  getOrCreateSession(mode);
+  getOrCreateSession(mode, lastProject);
 }
 
 // --- Redirect old direct-access URLs to landing page ---
@@ -162,6 +187,10 @@ if (NO_AUTH) {
   app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
+
+  // Project API routes (before static middleware)
+  setupProjectRoutes(app);
+
   app.use(express.static(path.join(__dirname, 'public')));
 } else {
   // Auth API routes (public, no auth required)
@@ -179,8 +208,112 @@ if (NO_AUTH) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 
+  // Project API routes (after auth middleware)
+  setupProjectRoutes(app);
+
   // Static files (protected)
   app.use(express.static(path.join(__dirname, 'public')));
+}
+
+// --- Project API routes ---
+function setupProjectRoutes(app) {
+  // Bootstrap data: last project, recents, repos
+  app.get('/api/projects', (req, res) => {
+    res.json(projects.getBootstrapData());
+  });
+
+  // Discover repos on the filesystem
+  app.get('/api/projects/discover', async (req, res) => {
+    try {
+      const repos = await projects.discoverRepos();
+      res.json({ repos });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Register a repo
+  app.post('/api/projects/repos', (req, res) => {
+    try {
+      const { repoPath } = req.body;
+      if (!repoPath || typeof repoPath !== 'string') {
+        return res.status(400).json({ error: 'repoPath is required' });
+      }
+      const resolved = projects.registerRepo(repoPath);
+      res.json({ ok: true, repoPath: resolved });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Unregister a repo
+  app.delete('/api/projects/repos', (req, res) => {
+    const { repoPath } = req.body;
+    if (!repoPath || typeof repoPath !== 'string') {
+      return res.status(400).json({ error: 'repoPath is required' });
+    }
+    projects.removeRepo(repoPath);
+    res.json({ ok: true });
+  });
+
+  // List branches for a repo
+  app.get('/api/projects/branches', async (req, res) => {
+    try {
+      const repo = req.query.repo;
+      if (!repo) return res.status(400).json({ error: 'repo query param required' });
+      const branches = await projects.listBranches(repo);
+      res.json({ branches });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // List worktrees for a repo
+  app.get('/api/projects/worktrees', async (req, res) => {
+    try {
+      const repo = req.query.repo;
+      if (!repo) return res.status(400).json({ error: 'repo query param required' });
+      const worktrees = await projects.listWorktrees(repo);
+      res.json({ worktrees });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Create a worktree
+  app.post('/api/projects/worktrees', async (req, res) => {
+    try {
+      const { repoPath, branch, newBranch } = req.body;
+      if (!repoPath || !branch) {
+        return res.status(400).json({ error: 'repoPath and branch are required' });
+      }
+      const worktreeDir = await projects.createWorktree(repoPath, branch, newBranch);
+      const projectId = projects.pathToProjectId(worktreeDir);
+      res.json({ ok: true, worktreePath: worktreeDir, projectId });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Select / activate a project
+  app.post('/api/projects/select', (req, res) => {
+    const { projectId, repoPath, branch, worktreePath } = req.body;
+    if (!projectId) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+
+    // Validate: 'home' always allowed, otherwise must be a valid project path
+    if (projectId !== 'home' && !projects.validateProjectPath(projectId)) {
+      return res.status(400).json({ error: 'Invalid project path' });
+    }
+
+    projects.setLastProject(projectId);
+    if (projectId !== 'home' && repoPath && branch && worktreePath) {
+      projects.touchRecent(projectId, repoPath, branch, worktreePath);
+    }
+
+    res.json({ ok: true });
+  });
 }
 
 // --- Cache HTML templates ---
@@ -192,11 +325,11 @@ const mobileHtml = fs.readFileSync(path.join(__dirname, 'public', 'mobile.html')
 // Cache-bust asset URLs so phones don't serve stale broken files.
 const startupTs = Date.now();
 
-function serveModeHtml(template, mode, res) {
+function serveModeHtml(template, mode, projectId, res) {
   // Pre-spawn the PTY session so it's ready by the time WebSocket connects
-  getOrCreateSession(mode);
+  getOrCreateSession(mode, projectId);
 
-  const modeScript = `<script>window.POCKETSHELL_MODE="${mode}";</script>`;
+  const modeScript = `<script>window.POCKETSHELL_MODE="${mode}";window.POCKETSHELL_PROJECT="${projectId}";</script>`;
   let html = template.replace('</head>', modeScript + '\n</head>');
   // Cache-bust local assets to avoid stale cached 404s
   html = html.replace(/((?:src|href)="\/[^"]+\.(?:js|css))(")/g, `$1?v=${startupTs}$2`);
@@ -206,24 +339,33 @@ function serveModeHtml(template, mode, res) {
 }
 
 app.get('/desktop/:mode(claude|copilot|terminal)', (req, res) => {
-  serveModeHtml(desktopHtml, req.params.mode, res);
+  const projectId = req.query.project || 'home';
+  serveModeHtml(desktopHtml, req.params.mode, projectId, res);
 });
 
 app.get('/mobile/:mode(claude|copilot|terminal)', (req, res) => {
-  serveModeHtml(mobileHtml, req.params.mode, res);
+  const projectId = req.query.project || 'home';
+  serveModeHtml(mobileHtml, req.params.mode, projectId, res);
 });
 
 // --- WebSocket Server (with auth + path routing) ---
 const wss = new WebSocketServer({
   server,
   verifyClient: (info) => {
-    // Validate WebSocket path: must be /ws/{mode}
-    const urlPath = info.req.url || '';
-    const match = urlPath.match(/^\/ws\/(claude|copilot|terminal)$/);
+    // Validate WebSocket path: must be /ws/{mode} with optional ?project= query
+    const parsed = new URL(info.req.url, 'http://localhost');
+    const match = parsed.pathname.match(/^\/ws\/(claude|copilot|terminal)$/);
     if (!match) return false;
 
-    // Stash mode on request for later use
+    // Stash mode and project on request for later use
     info.req._pocketshellMode = match[1];
+    const projectId = parsed.searchParams.get('project') || 'home';
+    info.req._pocketshellProject = projectId;
+
+    // Validate project ID (home is always allowed)
+    if (projectId !== 'home' && !projects.validateProjectPath(projectId)) {
+      return false;
+    }
 
     if (NO_AUTH) return true;
     return auth.authenticateWs(info.req);
@@ -233,14 +375,16 @@ const wss = new WebSocketServer({
 // --- WebSocket connections ---
 wss.on('connection', (ws, req) => {
   const mode = req._pocketshellMode;
+  const projectId = req._pocketshellProject || 'home';
+
   if (!mode || !VALID_MODES.has(mode)) {
     ws.close();
     return;
   }
 
-  const session = getOrCreateSession(mode);
+  const session = getOrCreateSession(mode, projectId);
   session.clients.add(ws);
-  console.log(`[ws:${mode}] client connected (total: ${session.clients.size})`);
+  console.log(`[ws:${projectId}:${mode}] client connected (total: ${session.clients.size})`);
 
   // Send replay buffer so new client sees current terminal state
   if (session.replayBuffer.length > 0) {
@@ -252,7 +396,7 @@ wss.on('connection', (ws, req) => {
     try {
       msg = JSON.parse(raw);
     } catch (e) {
-      console.warn(`[ws:${mode}] invalid JSON from client:`, e.message);
+      console.warn(`[ws:${projectId}:${mode}] invalid JSON from client:`, e.message);
       return;
     }
 
@@ -270,13 +414,13 @@ wss.on('connection', (ws, req) => {
           try {
             session.ptyProcess.resize(cols, rows);
           } catch (e) {
-            console.warn(`[ws:${mode}] resize error:`, e.message);
+            console.warn(`[ws:${projectId}:${mode}] resize error:`, e.message);
           }
         }
         break;
 
       case 'restart':
-        console.log(`[ws:${mode}] restart requested`);
+        console.log(`[ws:${projectId}:${mode}] restart requested`);
         session.spawn(msg.cols || 120, msg.rows || 30);
         break;
 
@@ -287,7 +431,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     session.clients.delete(ws);
-    console.log(`[ws:${mode}] client disconnected (total: ${session.clients.size})`);
+    console.log(`[ws:${projectId}:${mode}] client disconnected (total: ${session.clients.size})`);
   });
 });
 

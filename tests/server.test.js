@@ -174,3 +174,58 @@ describe('setup token', () => {
     expect(t1).not.toBe(t2);
   });
 });
+
+// --- Composite session key ---
+
+describe('composite session key', () => {
+  function makeSessionKey(projectId, mode) {
+    return `${projectId}:${mode}`;
+  }
+
+  test('generates correct key for home project', () => {
+    expect(makeSessionKey('home', 'claude')).toBe('home:claude');
+    expect(makeSessionKey('home', 'terminal')).toBe('home:terminal');
+  });
+
+  test('generates correct key for encoded project', () => {
+    const projectId = Buffer.from('/home/user/dev/repo').toString('base64url');
+    expect(makeSessionKey(projectId, 'claude')).toBe(`${projectId}:claude`);
+  });
+
+  test('different projects produce different keys for same mode', () => {
+    const k1 = makeSessionKey('home', 'claude');
+    const k2 = makeSessionKey('abc123', 'claude');
+    expect(k1).not.toBe(k2);
+  });
+
+  test('same project different modes produce different keys', () => {
+    const k1 = makeSessionKey('home', 'claude');
+    const k2 = makeSessionKey('home', 'terminal');
+    expect(k1).not.toBe(k2);
+  });
+});
+
+// --- Backward compat: no project param defaults to home ---
+
+describe('project param backward compatibility', () => {
+  function extractProjectFromUrl(url) {
+    try {
+      const parsed = new URL(url, 'http://localhost');
+      return parsed.searchParams.get('project') || 'home';
+    } catch {
+      return 'home';
+    }
+  }
+
+  test('no project param defaults to home', () => {
+    expect(extractProjectFromUrl('/ws/claude')).toBe('home');
+  });
+
+  test('explicit project param is used', () => {
+    expect(extractProjectFromUrl('/ws/claude?project=abc123')).toBe('abc123');
+  });
+
+  test('empty project param defaults to home', () => {
+    expect(extractProjectFromUrl('/ws/claude?project=')).toBe('home');
+  });
+});

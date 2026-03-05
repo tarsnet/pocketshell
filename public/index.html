@@ -9,32 +9,508 @@
 <body>
   <div class="landing">
     <h1 class="landing-title">PocketShell</h1>
-    <p class="landing-subtitle">Choose a terminal mode</p>
-    <div class="mode-grid">
-      <a class="mode-card" data-mode="claude">
-        <div class="mode-icon">&#x273B;</div>
-        <div class="mode-label">Claude Code</div>
-        <div class="mode-desc">AI-powered coding assistant</div>
-      </a>
-      <a class="mode-card" data-mode="copilot">
-        <div class="mode-icon">&#x2B22;</div>
-        <div class="mode-label">GitHub Copilot</div>
-        <div class="mode-desc">Copilot CLI assistant</div>
-      </a>
-      <a class="mode-card" data-mode="terminal">
-        <div class="mode-icon">&#x276F;</div>
-        <div class="mode-label">Terminal</div>
-        <div class="mode-desc">Plain bash shell</div>
-      </a>
+
+    <!-- Screen 1: Project Picker -->
+    <div id="screen-projects" class="screen" style="display:none;">
+      <p class="landing-subtitle">Pick a project</p>
+
+      <button id="btn-continue" class="btn-continue" style="display:none;"></button>
+
+      <div id="recents-section" style="display:none;">
+        <h2 class="section-label">Recent Projects</h2>
+        <div id="recents-list" class="recents-list"></div>
+      </div>
+
+      <div class="action-row">
+        <button id="btn-new-project" class="btn-secondary">+ New Project</button>
+        <button id="btn-no-project" class="btn-secondary btn-muted">No project (HOME)</button>
+      </div>
+    </div>
+
+    <!-- Screen 2: New Project Flow -->
+    <div id="screen-new-project" class="screen" style="display:none;">
+      <p id="new-project-subtitle" class="landing-subtitle">Select a repository</p>
+
+      <!-- Step 1: Select repo -->
+      <div id="step-repo">
+        <button id="btn-discover" class="btn-primary" style="width:100%;margin-bottom:0.8rem;">Scan for git repos</button>
+        <div id="discover-status" class="status-text" style="display:none;"></div>
+        <input type="text" id="discover-filter" class="input-field" placeholder="Filter repos..." style="display:none;margin-bottom:0.8rem;">
+        <div id="discover-tree" class="step-list" style="display:none;"></div>
+      </div>
+
+      <!-- Step 2: Select worktree (shown after repo selected) -->
+      <div id="step-worktree" style="display:none;">
+        <div id="worktree-list" class="step-list"></div>
+        <button id="btn-new-worktree" class="btn-secondary" style="width:100%;margin-top:0.6rem;">+ Create new worktree</button>
+      </div>
+
+      <!-- Step 3: Create new worktree (shown after "+ Create new worktree") -->
+      <div id="step-create-worktree" style="display:none;">
+        <h2 class="section-label">Select base branch</h2>
+        <div id="branch-list" class="step-list"></div>
+        <div class="form-row" style="margin-top:0.8rem;">
+          <input type="text" id="input-new-branch" class="input-field" placeholder="New branch name (optional)">
+          <button id="btn-create-worktree" class="btn-primary">Create</button>
+        </div>
+      </div>
+
+      <div id="step-error" class="error-text" style="display:none;"></div>
+
+      <div class="action-row" style="margin-top:1.5rem;">
+        <button id="btn-back-projects" class="btn-secondary btn-muted">&larr; Back</button>
+      </div>
+    </div>
+
+    <!-- Screen 3: Mode Picker -->
+    <div id="screen-modes" class="screen" style="display:none;">
+      <p id="mode-subtitle" class="landing-subtitle">Choose a terminal mode</p>
+      <div class="mode-grid">
+        <a class="mode-card" data-mode="claude">
+          <div class="mode-icon">&#x273B;</div>
+          <div class="mode-label">Claude Code</div>
+          <div class="mode-desc">AI-powered coding assistant</div>
+        </a>
+        <a class="mode-card" data-mode="copilot">
+          <div class="mode-icon">&#x2B22;</div>
+          <div class="mode-label">GitHub Copilot</div>
+          <div class="mode-desc">Copilot CLI assistant</div>
+        </a>
+        <a class="mode-card" data-mode="terminal">
+          <div class="mode-icon">&#x276F;</div>
+          <div class="mode-label">Terminal</div>
+          <div class="mode-desc">Plain bash shell</div>
+        </a>
+      </div>
+      <div class="action-row" id="mode-back-row" style="display:none;">
+        <button id="btn-back-from-modes" class="btn-secondary btn-muted">&larr; Change project</button>
+      </div>
     </div>
   </div>
+
   <script>
     (function () {
       var isMobile = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|Opera Mini|IEMobile/i.test(navigator.userAgent);
       var view = isMobile ? 'mobile' : 'desktop';
+
+      var screenProjects = document.getElementById('screen-projects');
+      var screenNewProject = document.getElementById('screen-new-project');
+      var screenModes = document.getElementById('screen-modes');
+      var btnContinue = document.getElementById('btn-continue');
+      var recentsSection = document.getElementById('recents-section');
+      var recentsList = document.getElementById('recents-list');
+      var btnNewProject = document.getElementById('btn-new-project');
+      var btnNoProject = document.getElementById('btn-no-project');
+      var btnBackProjects = document.getElementById('btn-back-projects');
+      var btnBackFromModes = document.getElementById('btn-back-from-modes');
+      var modeBackRow = document.getElementById('mode-back-row');
+      var modeSubtitle = document.getElementById('mode-subtitle');
+      // --- Step 2 elements ---
+      var newProjectSubtitle = document.getElementById('new-project-subtitle');
+      var stepRepo = document.getElementById('step-repo');
+      var btnDiscover = document.getElementById('btn-discover');
+      var discoverStatus = document.getElementById('discover-status');
+      var discoverFilter = document.getElementById('discover-filter');
+      var discoverTree = document.getElementById('discover-tree');
+      var stepWorktree = document.getElementById('step-worktree');
+      var worktreeList = document.getElementById('worktree-list');
+      var btnNewWorktree = document.getElementById('btn-new-worktree');
+      var stepCreateWorktree = document.getElementById('step-create-worktree');
+      var branchList = document.getElementById('branch-list');
+      var inputNewBranch = document.getElementById('input-new-branch');
+      var btnCreateWorktree = document.getElementById('btn-create-worktree');
+      var stepError = document.getElementById('step-error');
+
+      var discoveredRepos = [];
+      var registeredRepoPath = '';
+      var activeBranch = '';
+
+      function showScreen(name) {
+        screenProjects.style.display = name === 'projects' ? '' : 'none';
+        screenNewProject.style.display = name === 'new-project' ? '' : 'none';
+        screenModes.style.display = name === 'modes' ? '' : 'none';
+      }
+
+      function timeAgo(ts) {
+        var diff = Date.now() - ts;
+        var mins = Math.floor(diff / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return mins + 'm ago';
+        var hrs = Math.floor(mins / 60);
+        if (hrs < 24) return hrs + 'h ago';
+        var days = Math.floor(hrs / 24);
+        return days + 'd ago';
+      }
+
+      function selectProjectAndShowModes(projectId, repoPath, branch, worktreePath, label) {
+        // Tell server
+        fetch('/api/projects/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: projectId, repoPath: repoPath, branch: branch, worktreePath: worktreePath }),
+        });
+
+        // Update mode card links
+        var projectParam = projectId !== 'home' ? '?project=' + encodeURIComponent(projectId) : '';
+        document.querySelectorAll('.mode-card[data-mode]').forEach(function (card) {
+          card.href = '/' + view + '/' + card.dataset.mode + projectParam;
+        });
+
+        if (label && projectId !== 'home') {
+          modeSubtitle.textContent = 'Working in: ' + label;
+          modeBackRow.style.display = '';
+        } else {
+          modeSubtitle.textContent = 'Choose a terminal mode';
+          modeBackRow.style.display = 'none';
+        }
+
+        showScreen('modes');
+      }
+
+      function showProjectPickerScreen(data) {
+        showScreen('projects');
+        btnContinue.style.display = 'none';
+
+        // Recents
+        if (data.recents.length > 0) {
+          recentsSection.style.display = '';
+          recentsList.innerHTML = '';
+          data.recents.slice(0, 5).forEach(function (r) {
+            var item = document.createElement('button');
+            item.className = 'recent-item';
+            item.innerHTML = '<span class="recent-label">' + escapeHtml(r.label) + '</span><span class="recent-time">' + timeAgo(r.lastUsed) + '</span>';
+            item.onclick = function () {
+              selectProjectAndShowModes(r.projectId, r.repoPath, r.branch, r.worktreePath, r.label);
+            };
+            recentsList.appendChild(item);
+          });
+        } else {
+          recentsSection.style.display = 'none';
+        }
+      }
+
+      function renderProjectPicker(data) {
+        // If there's a last-used project, go straight to mode picker
+        if (data.lastProject && data.lastProject !== 'home') {
+          var lastRecent = data.recents.find(function (r) { return r.projectId === data.lastProject; });
+          if (lastRecent) {
+            selectProjectAndShowModes(lastRecent.projectId, lastRecent.repoPath, lastRecent.branch, lastRecent.worktreePath, lastRecent.label);
+            return;
+          }
+        }
+
+        showProjectPickerScreen(data);
+      }
+
+      function escapeHtml(text) {
+        var el = document.createElement('span');
+        el.textContent = text;
+        return el.innerHTML;
+      }
+
+      // --- New Project Flow ---
+
+      btnNewProject.addEventListener('click', function () {
+        showScreen('new-project');
+        showStep('repo');
+      });
+
+      btnNoProject.addEventListener('click', function () {
+        selectProjectAndShowModes('home', '', '', '', '');
+      });
+
+      btnBackProjects.addEventListener('click', function () {
+        loadBootstrapAndShow();
+      });
+
+      btnBackFromModes.addEventListener('click', function () {
+        // Force show project picker (don't auto-redirect to mode picker)
+        fetch('/api/projects')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            showProjectPickerScreen(data);
+          })
+          .catch(function () {
+            showProjectPickerScreen({ recents: [], repos: [] });
+          });
+      });
+
+      function showStep(step) {
+        stepRepo.style.display = step === 'repo' ? '' : 'none';
+        stepWorktree.style.display = step === 'worktree' ? '' : 'none';
+        stepCreateWorktree.style.display = step === 'create' ? '' : 'none';
+        stepError.style.display = 'none';
+
+        if (step === 'repo') {
+          newProjectSubtitle.textContent = 'Select a repository';
+          discoveredRepos = [];
+          discoverTree.style.display = 'none';
+          discoverTree.innerHTML = '';
+          discoverFilter.style.display = 'none';
+          discoverFilter.value = '';
+          discoverStatus.style.display = 'none';
+          btnDiscover.disabled = false;
+          btnDiscover.textContent = 'Scan for git repos';
+          registeredRepoPath = '';
+        } else if (step === 'worktree') {
+          newProjectSubtitle.textContent = 'Select a worktree';
+        } else if (step === 'create') {
+          newProjectSubtitle.textContent = 'Create new worktree';
+          inputNewBranch.value = '';
+          activeBranch = '';
+        }
+      }
+
+      // --- Helpers ---
+
+      function shortenHome(p) {
+        if (p.startsWith('/home/')) {
+          var parts = p.split('/');
+          if (parts.length >= 3) return '~/' + parts.slice(3).join('/');
+        }
+        return p;
+      }
+
+      function buildLabel(repoPath, branch) {
+        var parts = repoPath.split('/');
+        var name = parts[parts.length - 1] || repoPath;
+        return branch ? name + ' (' + branch + ')' : name;
+      }
+
+      function groupByParent(items) {
+        var groups = {};
+        items.forEach(function (item) {
+          var short = shortenHome(item.path);
+          var parts = short.split('/');
+          var groupKey = parts.slice(0, -1).join('/');
+          var name = parts[parts.length - 1];
+          if (!groups[groupKey]) groups[groupKey] = [];
+          groups[groupKey].push({ name: name, data: item });
+        });
+        return groups;
+      }
+
+      function renderGroupedList(container, items, onSelect) {
+        container.innerHTML = '';
+        if (items.length === 0) {
+          container.innerHTML = '<div class="status-text">None found</div>';
+          return;
+        }
+
+        var groups = groupByParent(items);
+        var groupKeys = Object.keys(groups).sort();
+
+        groupKeys.forEach(function (groupKey) {
+          var group = groups[groupKey];
+          if (groupKeys.length > 1 || groupKey) {
+            var header = document.createElement('div');
+            header.className = 'group-header';
+            header.textContent = groupKey + '/';
+            container.appendChild(header);
+          }
+          var list = document.createElement('div');
+          list.className = 'group-items';
+          group.forEach(function (entry) {
+            var item = document.createElement('button');
+            item.className = 'recent-item group-repo-item';
+            item.innerHTML = '<span class="recent-label">' + escapeHtml(entry.name) + '</span>' +
+              (entry.data.detail ? '<span class="recent-time">' + escapeHtml(entry.data.detail) + '</span>' : '');
+            item.title = entry.data.fullPath || entry.data.path;
+            item.onclick = function () {
+              container.querySelectorAll('.recent-item').forEach(function (el) { el.classList.remove('selected-item'); });
+              item.classList.add('selected-item');
+              onSelect(entry.data);
+            };
+            list.appendChild(item);
+          });
+          container.appendChild(list);
+        });
+      }
+
+      // --- Step 1: Repo discovery ---
+
+      discoverFilter.addEventListener('input', function () {
+        renderFilteredRepos(discoverFilter.value.trim());
+      });
+
+      function renderFilteredRepos(filter) {
+        var filtered = discoveredRepos;
+        if (filter) {
+          var lc = filter.toLowerCase();
+          filtered = filtered.filter(function (r) { return r.toLowerCase().indexOf(lc) !== -1; });
+        }
+        var items = filtered.map(function (r) { return { path: shortenHome(r), fullPath: r }; });
+        renderGroupedList(discoverTree, items, function (data) {
+          onRepoSelected(data.fullPath);
+        });
+      }
+
+      btnDiscover.addEventListener('click', function () {
+        btnDiscover.disabled = true;
+        btnDiscover.textContent = 'Scanning...';
+        discoverStatus.style.display = '';
+        discoverStatus.textContent = 'Searching for git repos...';
+        discoverTree.style.display = 'none';
+        discoverFilter.style.display = 'none';
+
+        fetch('/api/projects/discover')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            btnDiscover.disabled = false;
+            btnDiscover.textContent = 'Scan again';
+            if (data.error) {
+              discoverStatus.textContent = 'Error: ' + data.error;
+              return;
+            }
+            if (data.repos.length === 0) {
+              discoverStatus.textContent = 'No repos found.';
+              return;
+            }
+            discoveredRepos = data.repos;
+            discoverStatus.textContent = 'Found ' + data.repos.length + ' repo' + (data.repos.length === 1 ? '' : 's') + ':';
+            discoverFilter.style.display = '';
+            discoverTree.style.display = '';
+            discoverFilter.focus();
+            renderFilteredRepos('');
+          })
+          .catch(function () {
+            btnDiscover.disabled = false;
+            btnDiscover.textContent = 'Scan for git repos';
+            discoverStatus.textContent = 'Scan failed.';
+          });
+      });
+
+      function onRepoSelected(repoPath) {
+        stepError.style.display = 'none';
+        // Register the repo
+        fetch('/api/projects/repos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repoPath: repoPath }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.error) {
+              stepError.textContent = data.error;
+              stepError.style.display = '';
+              return;
+            }
+            registeredRepoPath = data.repoPath;
+            loadWorktrees(data.repoPath);
+          })
+          .catch(function () {
+            stepError.textContent = 'Network error';
+            stepError.style.display = '';
+          });
+      }
+
+      // --- Step 2: Worktrees ---
+
+      function loadWorktrees(repoPath) {
+        fetch('/api/projects/worktrees?repo=' + encodeURIComponent(repoPath))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.error) {
+              stepError.textContent = data.error;
+              stepError.style.display = '';
+              return;
+            }
+            showStep('worktree');
+            var items = data.worktrees.map(function (wt) {
+              return {
+                path: wt.path,
+                fullPath: wt.path,
+                branch: wt.branch || 'detached',
+                detail: wt.branch || 'detached',
+              };
+            });
+            renderGroupedList(worktreeList, items, function (wt) {
+              var projectId = btoa(wt.fullPath).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+              selectProjectAndShowModes(projectId, repoPath, wt.branch, wt.fullPath, buildLabel(repoPath, wt.branch));
+            });
+          });
+      }
+
+      btnNewWorktree.addEventListener('click', function () {
+        loadBranchesForCreate(registeredRepoPath);
+      });
+
+      // --- Step 3: Create new worktree ---
+
+      function loadBranchesForCreate(repoPath) {
+        fetch('/api/projects/branches?repo=' + encodeURIComponent(repoPath))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.error) {
+              stepError.textContent = data.error;
+              stepError.style.display = '';
+              return;
+            }
+            showStep('create');
+            var items = data.branches.map(function (b) { return { path: b, fullPath: b }; });
+            renderGroupedList(branchList, items, function (b) {
+              activeBranch = b.fullPath;
+            });
+          });
+      }
+
+      btnCreateWorktree.addEventListener('click', function () {
+        if (!registeredRepoPath || !activeBranch) {
+          stepError.textContent = 'Select a base branch first';
+          stepError.style.display = '';
+          return;
+        }
+        var newBranch = inputNewBranch.value.trim();
+        stepError.style.display = 'none';
+        btnCreateWorktree.disabled = true;
+        btnCreateWorktree.textContent = 'Creating...';
+
+        fetch('/api/projects/worktrees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoPath: registeredRepoPath,
+            branch: activeBranch,
+            newBranch: newBranch || undefined,
+          }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            btnCreateWorktree.disabled = false;
+            btnCreateWorktree.textContent = 'Create';
+            if (data.error) {
+              stepError.textContent = data.error;
+              stepError.style.display = '';
+              return;
+            }
+            var label = buildLabel(registeredRepoPath, newBranch || activeBranch);
+            selectProjectAndShowModes(data.projectId, registeredRepoPath, newBranch || activeBranch, data.worktreePath, label);
+          })
+          .catch(function () {
+            btnCreateWorktree.disabled = false;
+            btnCreateWorktree.textContent = 'Create';
+            stepError.textContent = 'Network error';
+            stepError.style.display = '';
+          });
+      });
+
+      // --- Bootstrap ---
+      function loadBootstrapAndShow() {
+        fetch('/api/projects')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            renderProjectPicker(data);
+          })
+          .catch(function () {
+            selectProjectAndShowModes('home', '', '', '', '');
+          });
+      }
+
       document.querySelectorAll('.mode-card[data-mode]').forEach(function (card) {
         card.href = '/' + view + '/' + card.dataset.mode;
       });
+
+      loadBootstrapAndShow();
     })();
   </script>
 </body>
