@@ -341,7 +341,9 @@ function setupProjectRoutes(app) {
       res.json({ ok: true, worktreePath: worktreeDir, projectId });
     } catch (e) {
       console.error('[api] create worktree error:', e.message);
-      res.status(400).json({ error: 'Failed to create worktree' });
+      // Show git's error message (strip "fatal:" prefix) — it's useful context
+      const userMsg = e.message.replace(/^fatal:\s*/i, '').trim() || 'Failed to create worktree';
+      res.status(400).json({ error: userMsg });
     }
   });
 

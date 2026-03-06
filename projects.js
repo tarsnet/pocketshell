@@ -225,6 +225,30 @@ function validateBranchName(name) {
   return true;
 }
 
+const WORKTREE_FALLBACK_DIR = path.join(os.homedir(), 'worktrees');
+
+function resolveWorktreeDir(repoPath, branchName) {
+  const resolved = path.resolve(repoPath);
+  const parentDir = path.dirname(resolved);
+  const repoName = path.basename(resolved);
+
+  // Prefer sibling dir (standard convention)
+  const siblingDir = path.join(parentDir, `${repoName}-${branchName}`);
+  if (path.resolve(siblingDir).startsWith(parentDir + path.sep)) {
+    // Check if parent is writable
+    try {
+      fs.accessSync(parentDir, fs.constants.W_OK);
+      return siblingDir;
+    } catch {
+      // Parent not writable — fall back
+    }
+  }
+
+  // Fall back to ~/worktrees/repoName-branchName
+  fs.mkdirSync(WORKTREE_FALLBACK_DIR, { recursive: true, mode: 0o755 });
+  return path.join(WORKTREE_FALLBACK_DIR, `${repoName}-${branchName}`);
+}
+
 async function createWorktree(repoPath, branch, newBranch) {
   if (!validateBranchName(branch)) {
     throw new Error('Invalid branch name');
@@ -234,22 +258,13 @@ async function createWorktree(repoPath, branch, newBranch) {
   }
 
   const resolved = path.resolve(repoPath);
-  const parentDir = path.dirname(resolved);
-  const repoName = path.basename(resolved);
 
   if (newBranch) {
-    const worktreeDir = path.join(parentDir, `${repoName}-${newBranch}`);
-    // Verify worktree dir stays within parent
-    if (!path.resolve(worktreeDir).startsWith(parentDir + path.sep)) {
-      throw new Error('Invalid branch name');
-    }
+    const worktreeDir = resolveWorktreeDir(resolved, newBranch);
     await gitExec(resolved, ['worktree', 'add', '-b', newBranch, worktreeDir, branch]);
     return worktreeDir;
   } else {
-    const worktreeDir = path.join(parentDir, `${repoName}-${branch}`);
-    if (!path.resolve(worktreeDir).startsWith(parentDir + path.sep)) {
-      throw new Error('Invalid branch name');
-    }
+    const worktreeDir = resolveWorktreeDir(resolved, branch);
     await gitExec(resolved, ['worktree', 'add', worktreeDir, branch]);
     return worktreeDir;
   }
@@ -323,13 +338,33 @@ function validateProjectPath(projectId) {
     return false;
   }
 
-  // Must be within a registered repo (or be a registered repo)
+  // Must be within a registered repo, be a registered repo,
+  // or be a worktree sibling (same parent dir, name starts with repoName-)
   const config = loadConfig();
   const repos = config?.repos || [];
   return repos.some(repo => {
     let realRepo;
     try { realRepo = fs.realpathSync(repo); } catch { realRepo = repo; }
-    return resolved === realRepo || resolved.startsWith(realRepo + path.sep);
+    if (resolved === realRepo || resolved.startsWith(realRepo + path.sep)) {
+      return true;
+    }
+    // Allow worktree siblings: e.g. /home/user/dev/repo-branch next to /home/user/dev/repo
+    const repoName = path.basename(realRepo);
+    const resolvedBasename = path.basename(resolved);
+    const resolvedParent = path.dirname(resolved);
+
+    // Check sibling dir OR ~/worktrees/ fallback dir
+    const isSibling = resolvedParent === path.dirname(realRepo);
+    const isFallback = resolvedParent === WORKTREE_FALLBACK_DIR;
+
+    if ((isSibling || isFallback) && resolvedBasename.startsWith(repoName + '-')) {
+      // Verify it's actually a git worktree (has a .git file, not a .git directory)
+      const gitPath = path.join(resolved, '.git');
+      try {
+        return fs.statSync(gitPath).isFile();
+      } catch { return false; }
+    }
+    return false;
   });
 }
 

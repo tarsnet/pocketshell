@@ -50,7 +50,7 @@
         <h2 class="section-label">Select base branch</h2>
         <div id="branch-list" class="step-list"></div>
         <div class="form-row" style="margin-top:0.8rem;">
-          <input type="text" id="input-new-branch" class="input-field" placeholder="New branch name (optional)">
+          <input type="text" id="input-new-branch" class="input-field" placeholder="New branch name (required)">
           <button id="btn-create-worktree" class="btn-primary">Create</button>
         </div>
       </div>
@@ -461,6 +461,11 @@
           return;
         }
         var newBranch = inputNewBranch.value.trim();
+        if (!newBranch) {
+          stepError.textContent = 'Enter a new branch name';
+          stepError.style.display = '';
+          return;
+        }
         stepError.style.display = 'none';
         btnCreateWorktree.disabled = true;
         btnCreateWorktree.textContent = 'Creating...';
