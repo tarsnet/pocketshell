@@ -9,6 +9,13 @@
 </head>
 <body>
   <div id="terminal-container"></div>
+  <!-- Auth banner (floating) -->
+  <div id="auth-banner" class="auth-banner" hidden>
+    <span id="auth-provider" class="auth-provider"></span>
+    <span class="auth-text">Sign-in required —</span>
+    <a id="auth-link" class="auth-open" href="#" target="_blank" rel="noopener">Open login page</a>
+    <button id="auth-dismiss" class="auth-dismiss">&times;</button>
+  </div>
   <div id="status-bar">
     <span id="status-indicator"></span>
     <span id="status-text">Connecting...</span>

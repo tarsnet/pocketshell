@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Your terminal, anywhere.** Run Claude Code, GitHub Copilot, or a plain bash shell from any browser — desktop or mobile.
+**Your terminal, anywhere.** Run Claude Code or a plain bash shell from any browser — desktop or mobile.
 
 ## Screenshots
 
@@ -10,13 +10,31 @@
   <img src="docs/landing-page.png" alt="Landing Page" width="250" />
   &nbsp;&nbsp;
   <img src="docs/claude-mobile.png" alt="Claude Code on Mobile" width="250" />
-  &nbsp;&nbsp;
-  <img src="docs/copilot-mobile.png" alt="GitHub Copilot on Mobile" width="250" />
 </p>
 
 <p align="center">
-  <em>Landing page &bull; Claude Code &bull; GitHub Copilot — all on mobile via Dev Tunnels</em>
+  <em>Landing page &bull; Claude Code — on mobile via Dev Tunnels</em>
 </p>
+
+## Reader Dev Tool
+
+A built-in split-view tool for developing and testing the mobile reader experience. Left panel is a fully interactive desktop terminal, right panel shows the live mobile reader rendering — side by side.
+
+```bash
+./pocketshell.sh dev-tool          # auto-detect mode
+./pocketshell.sh dev-tool claude   # connect to Claude session
+```
+
+<p align="center">
+  <img src="docs/dev-tool-claude.png" alt="Dev Tool — Claude Code" width="700" />
+</p>
+
+**Features:**
+- Auto-detects Claude / Terminal from PTY output and picks the right parser
+- Resizable split panels (drag the divider)
+- Live streaming indicator and diff-based rendering (same as mobile)
+- Auth URL banner testing
+- Type in the left terminal, see the reader view update in real-time on the right
 
 ## Why PocketShell?
 
@@ -25,10 +43,9 @@ Sometimes you need a terminal on a device that doesn't have one — your phone, 
 | Mode | What you get |
 |------|-------------|
 | **Claude Code** | Anthropic's AI coding assistant with a mobile-friendly reader view |
-| **GitHub Copilot** | GitHub's CLI assistant in your browser |
 | **Terminal** | Plain bash shell — use it for anything |
 
-Each mode runs its own independent PTY session. Open all three in separate tabs if you want.
+Each mode runs its own independent PTY session. Open both in separate tabs if you want.
 
 ## Quickstart
 
@@ -43,10 +60,12 @@ Open `http://localhost:3000` — you'll see the landing page. Pick a mode and go
 
 ## Features
 
-- **Three terminal modes** — Claude Code, GitHub Copilot, or plain bash, each with its own PTY
+- **Two terminal modes** — Claude Code or plain bash, each with its own PTY
 - **Desktop & Mobile UIs** — Full xterm.js terminal for desktop, chat-style reader view for mobile
-- **Per-mode reader parsers** — Claude, Copilot, and terminal output each parsed into styled segments
+- **Per-mode reader parsers** — Claude and terminal output each parsed into styled segments
 - **Real-time streaming** — WebSocket-based PTY with replay buffer for reconnecting clients
+- **Auth URL detection** — Intercepts `$BROWSER` and scans PTY output for OAuth/login URLs, shows clickable banner on mobile and desktop
+- **Reader Dev Tool** — Split-view harness for developing reader parsers (live terminal + reader side by side)
 - **Secure remote access** — Password + TOTP (Google Authenticator), rate-limited login, signed cookies
 - **One-command tunnel** — Microsoft Dev Tunnels integration for persistent HTTPS URLs
 - **No build step** — Pure client-side JavaScript, no bundler required
@@ -57,11 +76,10 @@ Open `http://localhost:3000` — you'll see the landing page. Pick a mode and go
 |-----|-------------|
 | `/` | Landing page — pick a mode |
 | `/desktop/claude` | Desktop terminal running Claude Code |
-| `/desktop/copilot` | Desktop terminal running GitHub Copilot |
 | `/desktop/terminal` | Desktop terminal running bash |
 | `/mobile/claude` | Mobile reader view running Claude Code |
-| `/mobile/copilot` | Mobile reader view running GitHub Copilot |
 | `/mobile/terminal` | Mobile reader view running bash |
+| `/reader-test.html` | Reader Dev Tool (split-view) |
 
 The landing page auto-detects your device and links to the right view.
 
@@ -79,8 +97,9 @@ Browser (Desktop / Mobile)
         Express Server
             |
             +-- PtySession (per mode, lazy-spawned)
-            |       |-- node-pty --> claude / copilot / bash
+            |       |-- node-pty --> claude / bash
             |       |-- Replay buffer (100KB)
+            |       |-- Auth URL scanner (PTY output + $BROWSER interception)
             |       +-- Broadcast to connected clients
             |
             +-- Auth Middleware (password + TOTP)
@@ -138,6 +157,9 @@ node server.js --port 8080
 ./pocketshell.sh start --remote        # Start server + tunnel
 ./pocketshell.sh start --local-noauth  # Start without auth
 ./pocketshell.sh stop                  # Stop server and tunnel
+./pocketshell.sh dev-tool              # Launch Reader Dev Tool (auto-detect)
+./pocketshell.sh dev-tool claude       # Launch Reader Dev Tool for Claude
+./pocketshell.sh test                  # Run all tests
 ./pocketshell.sh help                  # Show usage
 ```
 
@@ -179,6 +201,8 @@ pocketshell/
   prerequisites.sh         # Dependency checker
   server.js                # Express + WebSocket + multi-mode PTY server
   auth.js                  # Authentication (password, TOTP, sessions)
+  auth-url-scanner.js      # PTY output auth URL detection
+  browser-bridge.sh        # $BROWSER interceptor for auth URL capture
   package.json
   public/
     index.html / index.css # Landing page (mode picker)
@@ -187,8 +211,11 @@ pocketshell/
     mobile.html/.js/.css   # Mobile terminal + reader UI
     shared.js              # Shared terminal config, WebSocket, theme
     reader-parser.js       # Claude CLI conversation parser
-    copilot-parser.js      # Copilot CLI conversation parser
+    reader-renderer.js     # Shared reader rendering (markdown, colors)
     terminal-parser.js     # Plain terminal conversation parser
+    reader-test.html       # Reader Dev Tool (split-view harness)
+  tests/
+    fixtures/              # Captured PTY output samples
 ```
 
 ## Resetting Authentication

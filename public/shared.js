@@ -87,6 +87,9 @@ function connectWebSocket(term, callbacks = {}) {
           term.write('\r\n\x1b[33m--- Process exited ---\x1b[0m\r\n');
           if (callbacks.onExit) callbacks.onExit(msg.exitCode, msg.signal);
           break;
+        case 'auth-url':
+          callbacks.onAuthUrl?.(msg.url, msg.provider);
+          break;
       }
     };
 

@@ -1,0 +1,9 @@
+╭──────────────────────────────────────────────╮
+│ ✻ Claude Code v1.0.16                       │
+│   Opus 4.6 (1M context)                     │
+│   /home/glint/dev/myproject                  │
+╰──────────────────────────────────────────────╯
+
+❯ Explain how async/await works in JavaScript
+
+  ● Async/await is syntactic sugar built on top of Promises. Here's how it

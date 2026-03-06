@@ -1,0 +1,12 @@
+╭──────────────────────────────────────────────╮
+│ ✻ Claude Code v1.0.16                       │
+│   Opus 4.6 (1M context)                     │
+│   /home/glint/dev/myproject                  │
+╰──────────────────────────────────────────────╯
+
+To sign in, open this URL in your browser:
+https://console.anthropic.com/login/device?code=ABCD-1234
+
+Waiting for authentication...
+
+❯

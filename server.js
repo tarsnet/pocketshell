@@ -8,6 +8,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const auth = require('./auth');
 const projects = require('./projects');
+const { findAuthUrl } = require('./auth-url-scanner');
 
 // --- CLI flags ---
 const args = process.argv.slice(2);
@@ -86,6 +87,8 @@ app.use((req, res, next) => {
 });
 
 // --- PtySession class ---
+const BROWSER_BRIDGE_PATH = path.join(__dirname, 'browser-bridge.sh');
+
 class PtySession {
   constructor(mode, sessionKey, cwd) {
     this.mode = mode;
@@ -94,6 +97,10 @@ class PtySession {
     this.ptyProcess = null;
     this.replayBuffer = '';
     this.clients = new Set();
+    this.authPipePath = null;
+    this.authPipeWatcher = null;
+    this.authPipeSize = 0;
+    this.seenAuthUrls = new Set(); // dedup across $BROWSER and PTY scan
   }
 
   spawn(cols = 120, rows = 30) {
@@ -115,6 +122,14 @@ class PtySession {
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE;
 
+    // $BROWSER interception for auth URL capture
+    this.cleanupAuthPipe();
+    this.authPipePath = `/tmp/.pocketshell-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    env.BROWSER = BROWSER_BRIDGE_PATH;
+    env.POCKETSHELL_AUTH_PIPE = this.authPipePath;
+    this.seenAuthUrls.clear();
+    this.authPipeSize = 0;
+
     const modeConfig = MODES[this.mode];
 
     // For commands (claude, copilot): spawn the binary directly to avoid
@@ -130,6 +145,9 @@ class PtySession {
       env,
     });
 
+    // Watch auth pipe file for $BROWSER-intercepted URLs
+    this.watchAuthPipe();
+
     console.log(`[pty:${this.sessionKey}] spawned (pid ${this.ptyProcess.pid}), cols=${cols} rows=${rows}, cwd=${this.cwd}`);
 
     this.ptyProcess.onData((data) => {
@@ -144,6 +162,13 @@ class PtySession {
           ws.send(msg);
         }
       }
+
+      // PTY output scanning for auth URLs (fallback)
+      const authMatch = findAuthUrl(data);
+      if (authMatch && !this.seenAuthUrls.has(authMatch.url)) {
+        this.seenAuthUrls.add(authMatch.url);
+        this.broadcastAuthUrl(authMatch.url, authMatch.provider);
+      }
     });
 
     this.ptyProcess.onExit(({ exitCode, signal }) => {
@@ -155,7 +180,62 @@ class PtySession {
         }
       }
       this.ptyProcess = null;
+      this.cleanupAuthPipe();
     });
+  }
+
+  /** Watch the auth pipe file for URLs written by browser-bridge.sh */
+  watchAuthPipe() {
+    if (!this.authPipePath) return;
+    try {
+      // Ensure file exists for watchFile
+      fs.writeFileSync(this.authPipePath, '', { flag: 'a' });
+      this.authPipeWatcher = fs.watchFile(this.authPipePath, { interval: 500 }, (curr) => {
+        if (curr.size <= this.authPipeSize) return;
+        try {
+          const content = fs.readFileSync(this.authPipePath, 'utf8');
+          const lines = content.split('\n').filter(l => l.trim());
+          // Process only new lines
+          const newLines = lines.slice(this.authPipeSize === 0 ? 0 : undefined);
+          this.authPipeSize = curr.size;
+          for (const url of newLines) {
+            const trimmed = url.trim();
+            if (trimmed && !this.seenAuthUrls.has(trimmed)) {
+              this.seenAuthUrls.add(trimmed);
+              const provider = guessProviderFromUrl(trimmed);
+              this.broadcastAuthUrl(trimmed, provider);
+            }
+          }
+        } catch (e) {
+          // File may have been deleted
+        }
+      });
+    } catch (e) {
+      console.warn(`[pty:${this.sessionKey}] auth pipe setup error:`, e.message);
+    }
+  }
+
+  /** Clean up auth pipe file and watcher */
+  cleanupAuthPipe() {
+    if (this.authPipeWatcher) {
+      try { fs.unwatchFile(this.authPipePath); } catch (e) { /* ignore */ }
+      this.authPipeWatcher = null;
+    }
+    if (this.authPipePath) {
+      try { fs.unlinkSync(this.authPipePath); } catch (e) { /* ignore */ }
+      this.authPipePath = null;
+    }
+  }
+
+  /** Broadcast auth URL to all connected clients */
+  broadcastAuthUrl(url, provider) {
+    console.log(`[pty:${this.sessionKey}] auth URL detected: ${url} (${provider})`);
+    const msg = JSON.stringify({ type: 'auth-url', url, provider });
+    for (const ws of this.clients) {
+      if (ws.readyState === 1) {
+        ws.send(msg);
+      }
+    }
   }
 
   kill() {
@@ -163,7 +243,18 @@ class PtySession {
       try { this.ptyProcess.kill(); } catch (e) { console.warn(`[pty:${this.sessionKey}] kill error:`, e.message); }
       this.ptyProcess = null;
     }
+    this.cleanupAuthPipe();
   }
+}
+
+/** Guess auth provider from a URL (for $BROWSER interception path) */
+function guessProviderFromUrl(url) {
+  const lower = url.toLowerCase();
+  if (lower.includes('github.com')) return 'GitHub';
+  if (lower.includes('microsoftonline.com') || lower.includes('microsoft.com') || lower.includes('login.live.com')) return 'Microsoft';
+  if (lower.includes('anthropic.com')) return 'Anthropic';
+  if (lower.includes('google.com')) return 'Google';
+  return 'Auth';
 }
 
 // --- Sessions Map ---
@@ -218,6 +309,21 @@ app.get('/mobile.html', (req, res) => res.redirect('/'));
 if (NO_AUTH) {
   app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  // Debug: serve test fixtures for reader-test.html (only in --no-auth mode)
+  app.use('/tests/fixtures', express.static(path.join(__dirname, 'tests', 'fixtures')));
+
+  // Debug: replay buffer capture (only in --no-auth mode)
+  app.get('/api/debug/replay', (req, res) => {
+    const mode = req.query.mode || 'claude';
+    const project = req.query.project || 'home';
+    const sessionKey = `${project}:${mode}`;
+    const session = sessions.get(sessionKey);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    res.type('text').send(session.replayBuffer);
   });
 
   // Project API routes (before static middleware)

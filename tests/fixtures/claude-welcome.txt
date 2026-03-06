@@ -1,0 +1,13 @@
+╭──────────────────────────────────────────────╮
+│ ✻ Claude Code v1.0.16                       │
+│                                              │
+│   Opus 4.6 (1M context)                     │
+│                                              │
+│   /home/glint/dev/myproject                  │
+│                                              │
+│   Welcome back glint!                        │
+│                                              │
+│   Check for mistakes · AI                    │
+╰──────────────────────────────────────────────╯
+
+❯

@@ -153,7 +153,15 @@ var ReaderParser = (function () {
       segments.push(current);
     }
 
-    return segments;
+    // Filter out empty user prompts (bare ❯ with no text = user still typing)
+    return segments.filter(seg => {
+      if (seg.type !== 'user') return true;
+      const text = seg.lines
+        .map(l => l.replace(/^\s*\u276F\s*/, ''))
+        .join('')
+        .trim();
+      return text.length > 0;
+    });
   }
 
   return { parse, classifyLine, extractSystemText };

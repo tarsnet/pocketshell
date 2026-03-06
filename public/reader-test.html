@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reader Dev Tool — PocketShell</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <link rel="stylesheet" href="/mobile.css">
+  <style>
+    /* Override mobile.css for side-by-side layout */
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #1a1b26;
+      color: #c0caf5;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
+    /* --- Toolbar --- */
+    .toolbar {
+      flex-shrink: 0;
+      display: flex;
+      gap: 10px;
+      padding: 6px 12px;
+      background: #16161e;
+      border-bottom: 1px solid #24283b;
+      align-items: center;
+    }
+    .toolbar label {
+      font-size: 12px;
+      color: #565f89;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .toolbar select, .toolbar button {
+      background: #24283b;
+      color: #c0caf5;
+      border: 1px solid #414868;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .toolbar button:hover { border-color: #7aa2f7; }
+    .toolbar button:active { background: #414868; }
+    .toolbar .btn-connect {
+      background: #7aa2f7;
+      color: #1a1b26;
+      font-weight: 600;
+      border: none;
+    }
+    .toolbar .btn-connect:hover { background: #89b4fa; }
+    .toolbar .btn-connect.connected {
+      background: #9ece6a;
+    }
+    .toolbar .separator {
+      width: 1px;
+      height: 20px;
+      background: #24283b;
+    }
+    .status-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #24283b;
+      color: #565f89;
+      margin-left: auto;
+    }
+    .status-pill.live {
+      background: #9ece6a22;
+      color: #9ece6a;
+    }
+    .status-pill .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .detected-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #bb9af722;
+      color: #bb9af7;
+    }
+
+    /* --- Panels --- */
+    .panels {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .panel-header {
+      flex-shrink: 0;
+      padding: 4px 12px;
+      background: #16161e;
+      font-size: 11px;
+      color: #565f89;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border-bottom: 1px solid #24283b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-header .tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: #24283b;
+      color: #7aa2f7;
+    }
+    .panel:first-child {
+      border-right: 2px solid #24283b;
+    }
+    #term-panel .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #reader-panel .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 12px;
+    }
+    #reader-panel #reader-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: 16px;
+    }
+
+    /* Auth banner inside reader panel */
+    #reader-panel .auth-banner {
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+
+    /* --- Resize handle --- */
+    .resize-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: #24283b;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .resize-handle:hover, .resize-handle.dragging {
+      background: #7aa2f7;
+    }
+
+    /* --- Mobile frame simulation --- */
+    #reader-panel.mobile-frame {
+      background: #0f0f14;
+    }
+    #reader-panel.mobile-frame .panel-body {
+      max-width: 390px;
+      margin: 0 auto;
+      border-left: 2px solid #414868;
+      border-right: 2px solid #414868;
+      background: #1a1b26;
+    }
+    #reader-panel.mobile-frame #faithful-container {
+      max-width: 390px;
+      margin: 0 auto;
+      border-left: 2px solid #414868;
+      border-right: 2px solid #414868;
+      background: #1a1b26;
+    }
+    #reader-panel.mobile-frame #reader-messages {
+      font-size: 16px !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <label>Mode:</label>
+    <select id="mode-select">
+      <option value="auto">Auto-detect</option>
+      <option value="claude">Claude</option>
+      <option value="copilot">Copilot</option>
+      <option value="terminal">Terminal</option>
+    </select>
+    <label>Project:</label>
+    <select id="project-select">
+      <option value="home">home</option>
+    </select>
+    <button class="btn-connect" id="btn-connect">Connect</button>
+    <div class="separator"></div>
+    <span id="detected-badge" class="detected-badge" hidden>—</span>
+    <span id="status-pill" class="status-pill"><span class="dot"></span>Disconnected</span>
+  </div>
+
+  <!-- Panels -->
+  <div class="panels">
+    <div class="panel" id="term-panel">
+      <div class="panel-header">
+        Desktop Terminal
+        <span class="tag">interactive</span>
+      </div>
+      <div class="panel-body" id="term-container"></div>
+    </div>
+    <div class="resize-handle" id="resize-handle"></div>
+    <div class="panel" id="reader-panel">
+      <div class="panel-header">
+        Mobile Reader
+        <span class="tag" id="parser-tag">ReaderParser</span>
+        <span class="tag" id="segments-tag">0 segments</span>
+        <button id="mobile-frame-toggle" style="background:#24283b;color:#e0af68;border:1px solid #e0af6844;border-radius:4px;padding:2px 10px;font-size:11px;cursor:pointer;margin-left:auto;">Mobile</button>
+        <button id="faithful-toggle" style="background:#24283b;color:#7aa2f7;border:1px solid #7aa2f744;border-radius:4px;padding:2px 10px;font-size:11px;cursor:pointer;">Faithful</button>
+      </div>
+      <!-- Auth banner (for testing auth URL flow) -->
+      <div id="auth-banner" class="auth-banner" hidden>
+        <span id="auth-provider" class="auth-provider"></span>
+        <span class="auth-text">Sign-in required</span>
+        <a id="auth-link" class="auth-open" href="#" target="_blank" rel="noopener">Open</a>
+        <button id="auth-dismiss" class="auth-dismiss">&times;</button>
+      </div>
+      <div class="panel-body" id="reader-body">
+        <div id="reader-messages" style="font-size:14px;"></div>
+        <div id="streaming-indicator" class="streaming-indicator" hidden>
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+      </div>
+      <div id="faithful-container" style="flex:1;min-height:0;overflow:hidden;display:none;"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/reader-parser.js"></script>
+  <script src="/copilot-parser.js"></script>
+  <script src="/terminal-parser.js"></script>
+  <script src="/reader-renderer.js"></script>
+  <script>
+  (function () {
+    // --- Elements ---
+    const termContainer = document.getElementById('term-container');
+    const readerMessages = document.getElementById('reader-messages');
+    const readerBody = document.getElementById('reader-body');
+    const streamingIndicator = document.getElementById('streaming-indicator');
+    const statusPill = document.getElementById('status-pill');
+    const detectedBadge = document.getElementById('detected-badge');
+    const parserTag = document.getElementById('parser-tag');
+    const segmentsTag = document.getElementById('segments-tag');
+    const modeSelect = document.getElementById('mode-select');
+    const projectSelect = document.getElementById('project-select');
+    const btnConnect = document.getElementById('btn-connect');
+    const authBanner = document.getElementById('auth-banner');
+    const authProvider = document.getElementById('auth-provider');
+    const authLink = document.getElementById('auth-link');
+    const authDismiss = document.getElementById('auth-dismiss');
+    const faithfulToggle = document.getElementById('faithful-toggle');
+    const faithfulContainer = document.getElementById('faithful-container');
+    const mobileFrameToggle = document.getElementById('mobile-frame-toggle');
+
+    // --- Terminal setup ---
+    const term = createTerminal(termContainer, { fontSize: 13, cursorBlink: true });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    function fit() {
+      try { fitAddon.fit(); } catch (e) {}
+    }
+
+    setTimeout(fit, 100);
+    window.addEventListener('resize', fit);
+
+    // --- Panel resize handle ---
+    const resizeHandle = document.getElementById('resize-handle');
+    const termPanel = document.getElementById('term-panel');
+    const readerPanel = document.getElementById('reader-panel');
+    let resizing = false;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+      resizing = true;
+      resizeHandle.classList.add('dragging');
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!resizing) return;
+      const panelsRect = document.querySelector('.panels').getBoundingClientRect();
+      const pct = ((e.clientX - panelsRect.left) / panelsRect.width) * 100;
+      const clamped = Math.max(20, Math.min(80, pct));
+      termPanel.style.flex = 'none';
+      termPanel.style.width = clamped + '%';
+      readerPanel.style.flex = '1';
+      fit();
+      fitFaithful();
+    });
+    document.addEventListener('mouseup', () => {
+      if (resizing) {
+        resizing = false;
+        resizeHandle.classList.remove('dragging');
+      }
+    });
+
+    // --- Auto-detection ---
+    let detectedMode = null; // null until detected
+    let accumulatedOutput = '';
+
+    const DETECT_PATTERNS = {
+      claude:  /Claude Code v[\d.]+|╭.*Claude|✻\s*Claude/,
+      copilot: /GitHub Copilot v[\d.]+|⬡.*Copilot/,
+    };
+
+    function detectMode(data) {
+      if (detectedMode) return; // already detected
+      accumulatedOutput += data;
+      // Only scan first 5KB
+      const sample = accumulatedOutput.slice(0, 5000);
+      for (const [mode, re] of Object.entries(DETECT_PATTERNS)) {
+        if (re.test(sample)) {
+          detectedMode = mode;
+          detectedBadge.textContent = 'Detected: ' + mode;
+          detectedBadge.hidden = false;
+          if (modeSelect.value === 'auto') {
+            updateParserTag();
+          }
+          return;
+        }
+      }
+    }
+
+    function getActiveParser() {
+      const mode = modeSelect.value === 'auto' ? (detectedMode || 'terminal') : modeSelect.value;
+      return { claude: ReaderParser, copilot: ReaderParser, terminal: TerminalParser }[mode] || TerminalParser;
+    }
+
+    function getActiveMode() {
+      return modeSelect.value === 'auto' ? (detectedMode || 'terminal') : modeSelect.value;
+    }
+
+    function updateParserTag() {
+      const parser = getActiveParser();
+      parserTag.textContent = parser === ReaderParser ? 'ReaderParser' : 'TerminalParser';
+    }
+
+    modeSelect.addEventListener('change', () => {
+      updateParserTag();
+      doScrape(); // re-render with new parser
+    });
+
+    // --- Scraping + Rendering (mirrors mobile.js logic) ---
+    const ACTIVE_SCRAPE_MS = 500;
+    const QUIET_PERIOD_MS = 300;
+    let activeTimer = null;
+    let quietTimer = null;
+    let outputActive = false;
+    let renderedFingerprints = [];
+
+    function segmentFingerprint(seg) {
+      const preview = seg.lines.join('\n').slice(0, 100);
+      return seg.type + ':' + seg.lines.length + ':' + preview;
+    }
+
+    function createSegmentElement(segment) {
+      return ReaderRenderer.createSegmentElement(segment, getActiveParser(), getActiveMode());
+    }
+
+    // --- Faithful terminal (read-only xterm mirror) ---
+    let faithfulTerm = null;
+    let faithfulFitAddon = null;
+    let isFaithful = false;
+
+    function initFaithfulTerm() {
+      if (faithfulTerm) return;
+      faithfulTerm = createTerminal(faithfulContainer, { fontSize: 13, cursorBlink: false, disableStdin: true });
+      faithfulFitAddon = new FitAddon.FitAddon();
+      faithfulTerm.loadAddon(faithfulFitAddon);
+    }
+
+    function fitFaithful() {
+      if (faithfulTerm && faithfulFitAddon && isFaithful) {
+        try { faithfulFitAddon.fit(); } catch (e) {}
+      }
+    }
+
+    faithfulToggle.addEventListener('click', () => {
+      isFaithful = !isFaithful;
+      if (isFaithful) {
+        initFaithfulTerm();
+        readerBody.style.display = 'none';
+        faithfulContainer.style.display = 'block';
+        faithfulToggle.textContent = 'Reader';
+        faithfulToggle.style.color = '#9ece6a';
+        setTimeout(fitFaithful, 50);
+      } else {
+        readerBody.style.display = '';
+        faithfulContainer.style.display = 'none';
+        faithfulToggle.textContent = 'Faithful';
+        faithfulToggle.style.color = '#7aa2f7';
+      }
+    });
+
+    window.addEventListener('resize', fitFaithful);
+
+    // --- Mobile frame toggle ---
+    let isMobileFrame = false;
+    mobileFrameToggle.addEventListener('click', () => {
+      isMobileFrame = !isMobileFrame;
+      readerPanel.classList.toggle('mobile-frame', isMobileFrame);
+      mobileFrameToggle.textContent = isMobileFrame ? 'Desktop' : 'Mobile';
+      if (isFaithful) setTimeout(fitFaithful, 50);
+    });
+
+    function doScrape() {
+      const { lines, richLines } = ReaderRenderer.scrapeBufferRich(term);
+      if (lines.length === 0) {
+        segmentsTag.textContent = '0 segments';
+        return;
+      }
+      const parser = getActiveParser();
+      const segments = parser.parse(lines);
+      ReaderRenderer.attachRichLines(segments, lines, richLines);
+
+      // Diff-based rendering
+      const nearBottom = readerBody.scrollHeight - readerBody.scrollTop - readerBody.clientHeight < 80;
+      const newFingerprints = segments.map(segmentFingerprint);
+      let commonPrefix = 0;
+      const children = readerMessages.children;
+      const minLen = Math.min(renderedFingerprints.length, newFingerprints.length);
+      for (let i = 0; i < minLen; i++) {
+        if (renderedFingerprints[i] === newFingerprints[i]) commonPrefix++;
+        else break;
+      }
+      while (children.length > newFingerprints.length) {
+        readerMessages.removeChild(readerMessages.lastElementChild);
+      }
+      for (let i = commonPrefix; i < Math.min(children.length, segments.length); i++) {
+        const updatedEl = createSegmentElement(segments[i]);
+        if (updatedEl) readerMessages.replaceChild(updatedEl, children[i]);
+      }
+      for (let i = children.length; i < segments.length; i++) {
+        const el = createSegmentElement(segments[i]);
+        if (el) readerMessages.appendChild(el);
+      }
+      renderedFingerprints = newFingerprints;
+
+      if (nearBottom) readerBody.scrollTop = readerBody.scrollHeight;
+      segmentsTag.textContent = segments.length + ' segment' + (segments.length !== 1 ? 's' : '');
+    }
+
+    function scheduleScrape() {
+      if (!outputActive) {
+        outputActive = true;
+        streamingIndicator.hidden = false;
+      }
+      if (!activeTimer) {
+        activeTimer = setTimeout(function tick() {
+          activeTimer = null;
+          doScrape();
+          if (outputActive) activeTimer = setTimeout(tick, ACTIVE_SCRAPE_MS);
+        }, ACTIVE_SCRAPE_MS);
+      }
+      if (quietTimer) clearTimeout(quietTimer);
+      quietTimer = setTimeout(() => {
+        quietTimer = null;
+        outputActive = false;
+        streamingIndicator.hidden = true;
+        if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+        doScrape();
+      }, QUIET_PERIOD_MS);
+    }
+
+    // --- Auth banner ---
+    let authHideTimer = null;
+    function showAuthBanner(url, provider) {
+      authProvider.textContent = provider || 'Auth';
+      authLink.href = url;
+      authBanner.hidden = false;
+      if (authHideTimer) clearTimeout(authHideTimer);
+      authHideTimer = setTimeout(() => { authBanner.hidden = true; }, 120000);
+    }
+    authDismiss.addEventListener('click', () => {
+      authBanner.hidden = true;
+      if (authHideTimer) clearTimeout(authHideTimer);
+    });
+
+    // --- Connection ---
+    let conn = null;
+
+    function setStatus(text, live) {
+      statusPill.innerHTML = '<span class="dot"></span>' + text;
+      statusPill.classList.toggle('live', !!live);
+    }
+
+    function getConnectMode() {
+      // For WS connection, we need an actual mode (not 'auto')
+      const val = modeSelect.value;
+      if (val !== 'auto') return val;
+      // Default to terminal for auto — we'll detect from output
+      return detectedMode || 'terminal';
+    }
+
+    function doConnect() {
+      if (conn) conn.destroy();
+
+      const wsMode = getConnectMode();
+      const project = projectSelect.value;
+
+      // Set globals that connectWebSocket reads
+      window.POCKETSHELL_MODE = wsMode;
+      window.POCKETSHELL_PROJECT = project;
+
+      // Reset state
+      term.reset();
+      if (faithfulTerm) faithfulTerm.reset();
+      readerMessages.innerHTML = '';
+      renderedFingerprints = [];
+      detectedMode = null;
+      accumulatedOutput = '';
+      detectedBadge.hidden = true;
+      outputActive = false;
+      streamingIndicator.hidden = true;
+      if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+      if (quietTimer) { clearTimeout(quietTimer); quietTimer = null; }
+
+      updateParserTag();
+      setStatus('Connecting...');
+      btnConnect.textContent = 'Connecting...';
+
+      // Track whether initial replay has settled (to avoid buffer duplication)
+      let replaySettled = false;
+      let replaySettleTimer = null;
+
+      conn = connectWebSocket(term, {
+        onOpen() {
+          setStatus('Connected · ' + wsMode, true);
+          btnConnect.textContent = 'Reconnect';
+          btnConnect.classList.add('connected');
+          // Don't fit() here — wait for replay buffer to settle first.
+          // The replay buffer arrives right after onOpen. If we resize now,
+          // the PTY redraws at the new size while xterm already has the old
+          // replay content in scrollback → duplicate content.
+        },
+        onClose() {
+          setStatus('Disconnected');
+          btnConnect.classList.remove('connected');
+        },
+        onExit(exitCode) {
+          setStatus('Exited (' + exitCode + ')');
+        },
+        onOutput() {
+          // Each output chunk resets the settle timer.
+          // Once output stops for 600ms, we consider the replay done.
+          if (!replaySettled) {
+            if (replaySettleTimer) clearTimeout(replaySettleTimer);
+            replaySettleTimer = setTimeout(() => {
+              replaySettled = true;
+              // Clear scrollback (keeps only the visible screen), then
+              // fit to the panel size. The resize triggers a clean redraw.
+              term.clear();
+              fit();
+              if (conn) conn.sendResize(term.cols, term.rows);
+              // After the redraw arrives, do a final scrape
+              setTimeout(doScrape, 400);
+            }, 600);
+          }
+          scheduleScrape();
+        },
+        onAuthUrl(url, provider) {
+          showAuthBanner(url, provider);
+        },
+      });
+
+      // Forward keystrokes to PTY
+      term.onData((data) => {
+        conn.sendInput(data);
+      });
+
+      // Patch term.write to auto-detect mode and mirror to faithful terminal
+      const origWrite = term.write.bind(term);
+      term.write = function(data) {
+        if (typeof data === 'string') detectMode(data);
+        if (faithfulTerm) faithfulTerm.write(data);
+        return origWrite(data);
+      };
+    }
+
+    btnConnect.addEventListener('click', doConnect);
+
+    // --- Load projects list ---
+    fetch('/api/projects')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        // Populate project dropdown
+        const seen = new Set(['home']);
+        if (data.recents) {
+          for (const r of data.recents) {
+            if (!seen.has(r.projectId)) {
+              seen.add(r.projectId);
+              const opt = document.createElement('option');
+              opt.value = r.projectId;
+              // Decode base64 project ID to path for display
+              try {
+                const decoded = atob(r.projectId.replace(/-/g, '+').replace(/_/g, '/'));
+                const parts = decoded.split('/');
+                opt.textContent = parts[parts.length - 1] || decoded;
+              } catch (e) {
+                opt.textContent = r.projectId;
+              }
+              projectSelect.appendChild(opt);
+            }
+          }
+        }
+        // Pre-select last project
+        if (data.lastProject && data.lastProject !== 'home') {
+          projectSelect.value = data.lastProject;
+        }
+      })
+      .catch(() => {});
+
+    // --- Load modes availability ---
+    fetch('/api/modes')
+      .then(r => r.ok ? r.json() : null)
+      .then(modes => {
+        if (!modes) return;
+        // Auto-select first available non-terminal mode
+        if (modes.claude) {
+          modeSelect.value = 'claude';
+        } else if (modes.copilot) {
+          modeSelect.value = 'copilot';
+        } else {
+          modeSelect.value = 'terminal';
+        }
+        updateParserTag();
+      })
+      .catch(() => {});
+
+    // --- Auto-connect from URL params ---
+    const params = new URLSearchParams(location.search);
+    const urlMode = params.get('mode');
+    const urlProject = params.get('project');
+    if (urlMode) modeSelect.value = urlMode;
+    if (urlProject) projectSelect.value = urlProject;
+    if (params.has('connect') || urlMode) {
+      // Auto-connect after a brief delay for API data to load
+      setTimeout(doConnect, 300);
+    }
+  })();
+  </script>
+</body>
+</html>

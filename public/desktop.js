@@ -49,6 +49,26 @@
     } catch (e) { /* ignore fit errors during init */ }
   }
 
+  // --- Auth Banner ---
+  const authBanner = document.getElementById('auth-banner');
+  const authProviderEl = document.getElementById('auth-provider');
+  const authLink = document.getElementById('auth-link');
+  const authDismiss = document.getElementById('auth-dismiss');
+  let authHideTimer = null;
+
+  function showAuthBanner(url, provider) {
+    authProviderEl.textContent = provider || 'Auth';
+    authLink.href = url;
+    authBanner.hidden = false;
+    if (authHideTimer) clearTimeout(authHideTimer);
+    authHideTimer = setTimeout(() => { authBanner.hidden = true; }, 120000);
+  }
+
+  authDismiss.addEventListener('click', () => {
+    authBanner.hidden = true;
+    if (authHideTimer) clearTimeout(authHideTimer);
+  });
+
   // --- WebSocket ---
   const conn = connectWebSocket(term, {
     onOpen() {
@@ -62,6 +82,9 @@
     },
     onExit(exitCode) {
       statusText.textContent = `Process exited (code ${exitCode})`;
+    },
+    onAuthUrl(url, provider) {
+      showAuthBanner(url, provider);
     },
   });
 

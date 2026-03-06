@@ -119,6 +119,31 @@ describe('ReaderParser', () => {
       expect(segments).toHaveLength(1);
       expect(segments[0].type).toBe('system');
     });
+
+    test('bare ❯ prompt with no text is filtered out', () => {
+      const segments = ReaderParser.parse(['\u276F']);
+      expect(segments).toHaveLength(0);
+    });
+
+    test('bare ❯ with only whitespace is filtered out', () => {
+      const segments = ReaderParser.parse(['\u276F   ']);
+      expect(segments).toHaveLength(0);
+    });
+
+    test('❯ with text is kept', () => {
+      const segments = ReaderParser.parse(['\u276F hello']);
+      expect(segments).toHaveLength(1);
+      expect(segments[0].type).toBe('user');
+    });
+
+    test('bare ❯ among other segments is filtered out', () => {
+      const segments = ReaderParser.parse([
+        '  \u25CF Some assistant text.',
+        '\u276F',
+      ]);
+      expect(segments).toHaveLength(1);
+      expect(segments[0].type).toBe('assistant');
+    });
   });
 });
 

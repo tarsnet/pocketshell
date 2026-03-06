@@ -1,0 +1,16 @@
+╭──────────────────────────────────────────────╮
+│ ⬡ GitHub Copilot v0.26.0                    │
+│   /home/glint/dev/myproject                  │
+╰──────────────────────────────────────────────╯
+
+> How do I list all files?
+
+You can use the `ls` command to list files:
+
+```bash
+ls -la
+```
+
+This will show all files including hidden ones.
+
+> Thanks!

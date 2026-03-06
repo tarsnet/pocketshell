@@ -50,3 +50,56 @@ html, body {
 #status-right {
   margin-left: auto;
 }
+
+/* --- Auth Banner (floating) --- */
+.auth-banner {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #1a1b36;
+  border: 1px solid #7aa2f744;
+  border-radius: 8px;
+  z-index: 100;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.auth-banner[hidden] {
+  display: none;
+}
+
+.auth-provider {
+  font-weight: 700;
+  color: #bb9af7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+
+.auth-text {
+  color: #c0caf5;
+}
+
+.auth-open {
+  color: #7aa2f7;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.auth-dismiss {
+  background: none;
+  border: none;
+  color: #565f89;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.auth-dismiss:hover {
+  color: #c0caf5;
+}

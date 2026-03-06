@@ -35,6 +35,14 @@
   const viewToggleBtn = document.getElementById('view-toggle');
   const readerContainer = document.getElementById('reader-container');
   const readerMessages = document.getElementById('reader-messages');
+  const streamingIndicator = document.getElementById('streaming-indicator');
+
+  // Auth banner elements
+  const authBanner = document.getElementById('auth-banner');
+  const authProvider = document.getElementById('auth-provider');
+  const authLink = document.getElementById('auth-link');
+  const authDismiss = document.getElementById('auth-dismiss');
+  let authHideTimer = null;
 
   let fontSize = 12;
   let readerFontSize = 16;
@@ -58,198 +66,93 @@
     } catch (e) { /* ignore */ }
   }
 
+  // --- Auth Banner ---
+  function showAuthBanner(url, provider) {
+    authProvider.textContent = provider || 'Auth';
+    authLink.href = url;
+    authBanner.hidden = false;
+    // Auto-hide after 2 minutes
+    if (authHideTimer) clearTimeout(authHideTimer);
+    authHideTimer = setTimeout(() => { authBanner.hidden = true; }, 120000);
+  }
+
+  authDismiss.addEventListener('click', () => {
+    authBanner.hidden = true;
+    if (authHideTimer) clearTimeout(authHideTimer);
+  });
+
   // --- Buffer Scraper ---
   let lastLineCount = 0;
-  let scrapeTimer = null;
 
   function scrapeBuffer() {
-    const buf = term.buffer.active;
-    const lines = [];
-    const totalRows = buf.length;
-    for (let i = 0; i < totalRows; i++) {
-      const line = buf.getLine(i);
-      if (line) {
-        lines.push(line.translateToString());
-      }
-    }
-    // Trim trailing empty lines
-    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-      lines.pop();
-    }
+    const { lines, richLines } = ReaderRenderer.scrapeBufferRich(term);
     const changed = lines.length !== lastLineCount;
     lastLineCount = lines.length;
-    return { lines, changed };
+    return { lines, richLines, changed };
+  }
+
+  // --- Quiet-Period Debouncing ---
+  const ACTIVE_SCRAPE_MS = 500;  // periodic scrape during active output
+  const QUIET_PERIOD_MS = 300;   // final scrape after output stops
+  let activeTimer = null;
+  let quietTimer = null;
+  let outputActive = false;
+
+  function doScrape() {
+    const { lines, richLines } = scrapeBuffer();
+    if (lines.length > 0) {
+      const segments = ActiveParser.parse(lines);
+      ReaderRenderer.attachRichLines(segments, lines, richLines);
+      renderSegments(segments);
+    }
   }
 
   function scheduleScrape() {
     if (!isReaderView) return;
-    if (scrapeTimer) clearTimeout(scrapeTimer);
-    scrapeTimer = setTimeout(() => {
-      const { lines, changed } = scrapeBuffer();
-      if (changed || lines.length > 0) {
-        const segments = ActiveParser.parse(lines);
-        renderSegments(segments);
-      }
-    }, 150);
+
+    // Mark output as active, show streaming indicator
+    if (!outputActive) {
+      outputActive = true;
+      streamingIndicator.hidden = false;
+    }
+
+    // Schedule periodic active scrape if not already scheduled
+    if (!activeTimer) {
+      activeTimer = setTimeout(() => {
+        activeTimer = null;
+        doScrape();
+        // Reschedule if still active
+        if (outputActive) {
+          activeTimer = setTimeout(arguments.callee, ACTIVE_SCRAPE_MS);
+        }
+      }, ACTIVE_SCRAPE_MS);
+    }
+
+    // Reset quiet timer on every chunk
+    if (quietTimer) clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => {
+      quietTimer = null;
+      outputActive = false;
+      streamingIndicator.hidden = true;
+      // Cancel any pending active timer
+      if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+      // Final authoritative scrape
+      doScrape();
+    }, QUIET_PERIOD_MS);
+  }
+
+  // --- Segment Fingerprinting ---
+  function segmentFingerprint(seg) {
+    // Simple hash: type + line count + first 100 chars of content
+    const preview = seg.lines.join('\n').slice(0, 100);
+    return seg.type + ':' + seg.lines.length + ':' + preview;
   }
 
   // --- Renderer ---
-  let renderedSegmentCount = 0;
-  let lastFirstSegmentLine = '';
-
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }
-
-  function formatAssistantText(lines) {
-    let text = lines.join('\n');
-    // Strip leading marker characters (● ◆) and whitespace
-    text = text.replace(/^[\s]*[\u25CF\u25C6]\s*/, '');
-    text = escapeHtml(text);
-    // Inline code: `code`
-    text = text.replace(/`([^`]+)`/g, '<span class="reader-inline-code">$1</span>');
-    // Bold: **text** or __text__
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<span class="reader-bold">$1</span>');
-    text = text.replace(/__([^_]+)__/g, '<span class="reader-bold">$1</span>');
-    return text;
-  }
+  let renderedFingerprints = []; // fingerprints of currently rendered segments
 
   function createSegmentElement(segment) {
-    const el = document.createElement('div');
-    el.className = 'reader-msg';
-
-    switch (segment.type) {
-      case 'user': {
-        el.classList.add('msg-user');
-        const label = document.createElement('span');
-        label.className = 'msg-label';
-        label.textContent = 'You';
-        const content = document.createElement('div');
-        content.className = 'msg-content';
-        // Strip the ❯ prompt character
-        const userText = segment.lines
-          .map(l => l.replace(/^\s*\u276F\s*/, ''))
-          .join('\n')
-          .trim();
-        content.textContent = userText;
-        el.appendChild(label);
-        el.appendChild(content);
-        break;
-      }
-
-      case 'assistant': {
-        el.classList.add('msg-assistant');
-        const content = document.createElement('div');
-        content.className = 'msg-content';
-        content.innerHTML = formatAssistantText(segment.lines);
-        el.appendChild(content);
-        break;
-      }
-
-      case 'tool-call':
-      case 'tool-result': {
-        el.classList.add('tool-block');
-        el.style.padding = '0';
-        // Header
-        const header = document.createElement('div');
-        header.className = 'tool-header';
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'tool-name';
-        if (segment.type === 'tool-result') {
-          nameSpan.classList.add('tool-result-label');
-          nameSpan.textContent = 'Result';
-        } else {
-          nameSpan.textContent = segment.toolName || 'Tool';
-        }
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'tool-copy-btn';
-        copyBtn.textContent = 'Copy';
-        copyBtn.addEventListener('click', () => {
-          const bodyText = body.textContent;
-          navigator.clipboard.writeText(bodyText).then(() => {
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-          }).catch(() => {
-            copyBtn.textContent = 'Failed';
-            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-          });
-        });
-        header.appendChild(nameSpan);
-        header.appendChild(copyBtn);
-        // Body
-        const body = document.createElement('div');
-        body.className = 'tool-body';
-        // Strip leading marker characters
-        const toolLines = segment.lines.map(l =>
-          l.replace(/^\s*[\u276F\u23BF]\s*/, '')
-        );
-        // Remove first line if it's just the tool name
-        if (toolLines.length > 0 && segment.toolName &&
-            toolLines[0].trim().startsWith(segment.toolName)) {
-          toolLines.shift();
-        }
-        body.textContent = toolLines.join('\n').trim();
-        el.appendChild(header);
-        el.appendChild(body);
-        break;
-      }
-
-      case 'system':
-      default: {
-        // Extract meaningful text, strip box-drawing decorations
-        const meaningful = ActiveParser.extractSystemText(segment.lines);
-        if (meaningful.length === 0) {
-          return null;
-        }
-        const fullText = meaningful.join(' ');
-
-        // Detect CLI welcome banners
-        const claudeMatch = mode === 'claude' && fullText.match(/Claude Code v([\d.]+)/);
-        const copilotMatch = mode === 'copilot' && fullText.match(/GitHub Copilot v([\d.]+)/);
-        const welcomeMatch2 = claudeMatch || copilotMatch;
-        if (welcomeMatch2) {
-          el.classList.add('msg-welcome');
-          el.innerHTML = '';
-          const header = document.createElement('div');
-          header.className = 'welcome-header';
-          if (claudeMatch) {
-            header.innerHTML = '<span class="welcome-icon">\u273B</span> Claude Code <span class="welcome-version">v' + escapeHtml(claudeMatch[1]) + '</span>';
-          } else {
-            header.innerHTML = '<span class="welcome-icon">\u2B22</span> GitHub Copilot <span class="welcome-version">v' + escapeHtml(copilotMatch[1]) + '</span>';
-          }
-          el.appendChild(header);
-          // Extract useful info lines
-          const infoItems = [];
-          if (claudeMatch) {
-            const modelMatch = fullText.match(/(Opus|Sonnet|Haiku)\s+[\d.]+\s*\([^)]*\)/);
-            if (modelMatch) infoItems.push(modelMatch[0]);
-            const welcomeBack = fullText.match(/Welcome back \w+!/);
-            if (welcomeBack) infoItems.push(welcomeBack[0]);
-          }
-          const pathMatch = fullText.match(/(\/home\/\S+|\/Users\/\S+|~\/\S+)/);
-          if (pathMatch) infoItems.push(pathMatch[0]);
-          const checkMistakes = fullText.match(/Check for mistakes/);
-          if (checkMistakes) infoItems.push('AI · Check for mistakes');
-          if (infoItems.length > 0) {
-            const info = document.createElement('div');
-            info.className = 'welcome-info';
-            info.textContent = infoItems.join(' · ');
-            el.appendChild(info);
-          }
-          break;
-        }
-
-        // Regular system message — compact
-        el.classList.add('msg-system');
-        el.textContent = meaningful.join(' · ');
-        break;
-      }
-    }
-
-    return el;
+    return ReaderRenderer.createSegmentElement(segment, ActiveParser, mode);
   }
 
   function renderSegments(segments) {
@@ -258,36 +161,43 @@
     // Check if user is near bottom for auto-scroll
     const nearBottom = readerContainer.scrollHeight - readerContainer.scrollTop - readerContainer.clientHeight < 80;
 
-    // Detect if content changed fundamentally (e.g. trust prompt → welcome banner)
-    // by checking if the first segment's content differs from what we rendered.
-    const firstLine = segments[0]?.lines?.[0] || '';
-    const contentChanged = firstLine !== lastFirstSegmentLine;
-    lastFirstSegmentLine = firstLine;
+    const newFingerprints = segments.map(segmentFingerprint);
 
-    if (segments.length < renderedSegmentCount || (contentChanged && renderedSegmentCount > 0)) {
-      // Terminal content was rewritten or cleared — full rebuild
-      readerMessages.innerHTML = '';
-      renderedSegmentCount = 0;
-    }
-
-    // Re-render last existing segment (handles streaming updates)
-    if (renderedSegmentCount > 0 && readerMessages.lastElementChild) {
-      const lastIdx = renderedSegmentCount - 1;
-      if (lastIdx < segments.length) {
-        const updatedEl = createSegmentElement(segments[lastIdx]);
-        if (updatedEl) {
-          readerMessages.replaceChild(updatedEl, readerMessages.lastElementChild);
-        }
+    // Find common prefix — how many leading segments are unchanged
+    let commonPrefix = 0;
+    const children = readerMessages.children;
+    const minLen = Math.min(renderedFingerprints.length, newFingerprints.length);
+    for (let i = 0; i < minLen; i++) {
+      if (renderedFingerprints[i] === newFingerprints[i]) {
+        commonPrefix++;
+      } else {
+        break;
       }
     }
 
-    // Append new segments
-    for (let i = renderedSegmentCount; i < segments.length; i++) {
-      const el = createSegmentElement(segments[i]);
-      if (el) readerMessages.appendChild(el);
+    // If total segments decreased, remove excess DOM nodes from the end
+    while (children.length > newFingerprints.length) {
+      readerMessages.removeChild(readerMessages.lastElementChild);
     }
 
-    renderedSegmentCount = segments.length;
+    // Update changed segments in-place (after the common prefix)
+    for (let i = commonPrefix; i < Math.min(children.length, segments.length); i++) {
+      const updatedEl = createSegmentElement(segments[i]);
+      if (updatedEl) {
+        readerMessages.replaceChild(updatedEl, children[i]);
+      }
+    }
+
+    // Append new segments beyond what we had
+    for (let i = children.length; i < segments.length; i++) {
+      const el = createSegmentElement(segments[i]);
+      if (el) {
+        el.classList.add('segment-new');
+        readerMessages.appendChild(el);
+      }
+    }
+
+    renderedFingerprints = newFingerprints;
 
     // Auto-scroll if user was near bottom
     if (nearBottom) {
@@ -303,9 +213,10 @@
       document.body.classList.remove('terminal-active');
       viewToggleBtn.textContent = 'Terminal';
       // Immediate scrape+render
-      const { lines } = scrapeBuffer();
+      const { lines, richLines } = scrapeBuffer();
       const segments = ActiveParser.parse(lines);
-      renderedSegmentCount = 0;
+      ReaderRenderer.attachRichLines(segments, lines, richLines);
+      renderedFingerprints = [];
       readerMessages.innerHTML = '';
       renderSegments(segments);
       // Scroll to bottom
@@ -341,6 +252,9 @@
     },
     onOutput() {
       scheduleScrape();
+    },
+    onAuthUrl(url, provider) {
+      showAuthBanner(url, provider);
     },
   });
 
@@ -378,8 +292,12 @@
   restartBtn.addEventListener('click', () => {
     term.clear();
     readerMessages.innerHTML = '';
-    renderedSegmentCount = 0;
+    renderedFingerprints = [];
     lastLineCount = 0;
+    outputActive = false;
+    streamingIndicator.hidden = true;
+    if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+    if (quietTimer) { clearTimeout(quietTimer); quietTimer = null; }
     conn.sendRestart(term.cols, term.rows);
     statusText.textContent = 'Restarting...';
   });

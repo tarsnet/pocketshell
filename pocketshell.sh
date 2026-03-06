@@ -26,7 +26,9 @@ usage() {
   echo "  setup                Check prerequisites and install dependencies"
   echo "  start                Start the server (default: local with auth)"
   echo "  stop                 Stop running server and tunnel"
-  echo "  test [suites]        Run tests (all, or comma-separated: auth,parsers,server,projects)"
+  echo "  restart              Stop + start (shortcut for stop then start with same args)"
+  echo "  dev-tool [mode]      Launch Reader Dev Tool (split-view: terminal + reader)"
+  echo "  test [suites]        Run tests (all, or comma-separated: auth,auth-url,parsers,server,projects)"
   echo "  help                 Show this help message"
   echo ""
   echo "Start options:"
@@ -41,7 +43,11 @@ usage() {
   echo -e "  ${CYAN}./pocketshell.sh start --remote${NC}         # Start with tunnel"
   echo -e "  ${CYAN}./pocketshell.sh start --local-noauth${NC}   # Start without auth"
   echo -e "  ${CYAN}./pocketshell.sh start --force${NC}          # Force restart"
+  echo -e "  ${CYAN}./pocketshell.sh restart${NC}                # Stop + start (keeps same args)"
+  echo -e "  ${CYAN}./pocketshell.sh restart --local-noauth${NC} # Stop + start without auth"
   echo -e "  ${CYAN}./pocketshell.sh stop${NC}                  # Stop everything"
+  echo -e "  ${CYAN}./pocketshell.sh dev-tool${NC}               # Launch dev tool (auto-detect mode)"
+  echo -e "  ${CYAN}./pocketshell.sh dev-tool claude${NC}        # Launch dev tool for Claude"
   echo -e "  ${CYAN}./pocketshell.sh test${NC}                  # Run all tests"
   echo -e "  ${CYAN}./pocketshell.sh test auth,parsers${NC}      # Run specific suites"
   echo -e "  ${CYAN}./pocketshell.sh test -- --coverage${NC}     # Pass extra args to jest"
@@ -227,6 +233,43 @@ cmd_start_remote() {
   cleanup
 }
 
+cmd_dev_tool() {
+  local mode="${1:-}"
+  local port=3001
+
+  # Check if main server is running — dev-tool needs it for WS
+  # Actually, dev-tool starts its own --no-auth server on a separate port
+  # so it can access debug APIs (replay buffer, fixtures)
+
+  # Kill anything on our port
+  fuser -k "$port/tcp" 2>/dev/null || true
+  sleep 0.5
+
+  cd "$SCRIPT_DIR"
+
+  # Build the URL
+  local url="http://localhost:${port}/reader-test.html"
+  if [ -n "$mode" ]; then
+    url="${url}?mode=${mode}"
+  fi
+
+  echo -e "${BOLD}Starting Reader Dev Tool...${NC}"
+  echo -e "  Port:  ${CYAN}${port}${NC} (no-auth)"
+  echo -e "  URL:   ${CYAN}${url}${NC}"
+  echo ""
+
+  # Try to open in browser
+  if command -v wslview &>/dev/null; then
+    wslview "$url" 2>/dev/null &
+  elif command -v xdg-open &>/dev/null; then
+    xdg-open "$url" 2>/dev/null &
+  elif command -v open &>/dev/null; then
+    open "$url" &
+  fi
+
+  exec node server.js --no-auth --port "$port"
+}
+
 cmd_test() {
   cd "$SCRIPT_DIR"
   local suites=""
@@ -254,7 +297,7 @@ cmd_test() {
     IFS=',' read -ra suite_list <<< "$suites"
     for s in "${suite_list[@]}"; do
       case "$s" in
-        auth|parsers|server|projects) ;;
+        auth|parsers|server|projects|auth-url) ;;
         *) all_known=false; break ;;
       esac
     done
@@ -315,6 +358,29 @@ case "$COMMAND" in
     ;;
   stop)
     cmd_stop
+    ;;
+  restart)
+    cmd_stop
+    sleep 1
+    # Re-parse remaining args as if they were passed to 'start'
+    START_MODE="--local"
+    FORCE="false"
+    remaining_args=()
+    for arg in "$@"; do
+      case "$arg" in
+        --local|--remote|--local-noauth) START_MODE="$arg" ;;
+        --force) FORCE="true" ;;
+        *) remaining_args+=("$arg") ;;
+      esac
+    done
+    case "$START_MODE" in
+      --local)        cmd_start_local "false" "${remaining_args[@]+"${remaining_args[@]}"}" ;;
+      --remote)       cmd_start_remote "false" ;;
+      --local-noauth) cmd_start_noauth "false" "${remaining_args[@]+"${remaining_args[@]}"}" ;;
+    esac
+    ;;
+  dev-tool)
+    cmd_dev_tool "$@"
     ;;
   test)
     cmd_test "$@"
