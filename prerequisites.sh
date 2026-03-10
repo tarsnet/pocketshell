@@ -142,19 +142,67 @@ else
   fi
 fi
 
-# --- devtunnel (optional) ---
-if command -v devtunnel &>/dev/null; then
-  check_pass "devtunnel CLI found (remote access available)"
+# --- Build tools (required for node-pty native module) ---
+if command -v make &>/dev/null && command -v gcc &>/dev/null; then
+  check_pass "Build tools found (make, gcc)"
 else
-  check_warn "devtunnel CLI not found (optional — needed for remote access)"
-  echo -e "         Install: ${CYAN}curl -sL https://aka.ms/DevTunnelCliInstall | bash${NC}"
+  case "$PLATFORM" in
+    wsl|linux)
+      echo -e "  [${WARN}] Build tools (make/gcc) not found — required for node-pty"
+      echo -e "         Attempting to install build-essential (may prompt for password)..."
+      if sudo apt-get install -y build-essential; then
+        check_pass "Build tools installed (build-essential)"
+      else
+        check_fail "Could not install build tools automatically"
+        echo -e "         Run manually: ${CYAN}sudo apt-get install -y build-essential${NC}"
+      fi
+      ;;
+    macos)
+      echo -e "  [${WARN}] Build tools not found — required for node-pty"
+      echo -e "         Attempting to install Xcode Command Line Tools..."
+      if xcode-select --install 2>/dev/null; then
+        check_pass "Xcode Command Line Tools installation started"
+        echo -e "         ${YELLOW}Note: Complete the installation dialog, then re-run setup.${NC}"
+      else
+        check_fail "Could not install Xcode Command Line Tools automatically"
+        echo -e "         Run manually: ${CYAN}xcode-select --install${NC}"
+      fi
+      ;;
+    *)
+      check_fail "Build tools (make/gcc) not found — required for node-pty"
+      echo -e "         Install your platform's C build tools."
+      ;;
+  esac
+fi
+
+# --- devtunnel (optional, needed for remote access) ---
+if ! command -v devtunnel &>/dev/null; then
+  echo -e "  [${WARN}] devtunnel CLI not found — attempting to install..."
+  if curl -sL https://aka.ms/DevTunnelCliInstall | bash; then
+    check_pass "devtunnel CLI installed"
+  else
+    check_warn "devtunnel CLI could not be installed automatically"
+    echo -e "         Install manually: ${CYAN}curl -sL https://aka.ms/DevTunnelCliInstall | bash${NC}"
+  fi
+fi
+
+if command -v devtunnel &>/dev/null; then
+  if devtunnel user show &>/dev/null 2>&1; then
+    check_pass "devtunnel CLI ready (logged in)"
+  else
+    check_warn "devtunnel installed but not logged in"
+    echo -e "         Run: ${CYAN}devtunnel user login -g -d${NC}"
+    echo -e "         ${YELLOW}(Opens browser for GitHub/Microsoft authentication)${NC}"
+  fi
 fi
 
 # --- npm install ---
 echo ""
 echo -e "${BOLD}Installing dependencies...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if (cd "$SCRIPT_DIR" && npm install); then
+if [ "$failed" -gt 0 ]; then
+  echo -e "  ${YELLOW}Skipping npm install — fix the failed checks above first.${NC}"
+elif (cd "$SCRIPT_DIR" && npm install); then
   check_pass "npm install completed"
 else
   check_fail "npm install failed"
