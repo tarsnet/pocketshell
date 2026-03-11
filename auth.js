@@ -8,7 +8,7 @@ const CONFIG_PATH = path.join(__dirname, '.auth.json');
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
-const SERVICE_NAME = 'ClaudeTerminal';
+const SERVICE_NAME = 'PocketShell';
 
 // --- Active session store (in-memory) ---
 const activeSessions = new Set();
