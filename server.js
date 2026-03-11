@@ -5,7 +5,7 @@ const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const auth = require('./auth');
 const projects = require('./projects');
 const { findAuthUrl } = require('./auth-url-scanner');
@@ -634,4 +634,16 @@ server.listen(PORT, BIND_HOST, () => {
   }
   console.log('  └────────────────────────────────────────────────────────────┘');
   console.log('');
+
+  // Auto-open browser for first-time setup
+  if (!NO_AUTH && !auth.isSetupComplete()) {
+    const setupUrl = `http://localhost:${PORT}/login.html?token=${SETUP_TOKEN}`;
+    const openCmd = ['wslview', 'xdg-open', 'open'].find(cmd => {
+      try { execFileSync('which', [cmd], { stdio: 'ignore', timeout: 1000 }); return true; } catch { return false; }
+    });
+    if (openCmd) {
+      spawn(openCmd, [setupUrl], { detached: true, stdio: 'ignore' }).unref();
+      console.log(`  [server] Opening setup page in browser: ${setupUrl}\n`);
+    }
+  }
 });

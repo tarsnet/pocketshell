@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDFILE="$SCRIPT_DIR/.pocketshell.pid"
-TUNNEL_NAME="claude-terminal"
+TUNNEL_NAME="pocketshell-$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -36,11 +36,13 @@ usage() {
   echo "  --remote             Start server + devtunnel for remote access"
   echo "  --local-noauth       Start server without auth (trusted network only)"
   echo "  --force              Stop any running instance first, then start"
+  echo "  --detach             Return to prompt immediately (remote mode only)"
   echo ""
   echo "Examples:"
   echo -e "  ${CYAN}./pocketshell.sh setup${NC}                 # First-time setup"
   echo -e "  ${CYAN}./pocketshell.sh start${NC}                 # Start locally"
   echo -e "  ${CYAN}./pocketshell.sh start --remote${NC}         # Start with tunnel"
+  echo -e "  ${CYAN}./pocketshell.sh start --remote --detach${NC} # Start with tunnel, return to prompt"
   echo -e "  ${CYAN}./pocketshell.sh start --local-noauth${NC}   # Start without auth"
   echo -e "  ${CYAN}./pocketshell.sh start --force${NC}          # Force restart"
   echo -e "  ${CYAN}./pocketshell.sh restart${NC}                # Stop + start (keeps same args)"
@@ -169,6 +171,7 @@ cmd_start_noauth() {
 
 cmd_start_remote() {
   local force="$1"
+  local detach="$2"
   require_not_running "$force"
 
   # Check devtunnel is available
@@ -189,7 +192,7 @@ cmd_start_remote() {
   if ! devtunnel show "$TUNNEL_NAME" &>/dev/null 2>&1; then
     echo -e "${YELLOW}Creating tunnel '${TUNNEL_NAME}'...${NC}"
     devtunnel create "$TUNNEL_NAME" --allow-anonymous
-    devtunnel port create "$TUNNEL_NAME" -p 3000 --protocol https
+    devtunnel port create "$TUNNEL_NAME" -p 3000 --protocol http
   fi
 
   echo -e "${BOLD}Starting PocketShell (remote access)...${NC}"
@@ -228,9 +231,30 @@ cmd_start_remote() {
   local tunnel_pid=$!
   save_pid "$tunnel_pid"
 
-  # Wait for either process to exit
-  wait -n "$server_pid" "$tunnel_pid" 2>/dev/null || true
-  cleanup
+  # Print QR code for the remote URL once tunnel is up
+  sleep 2
+  local tunnel_url
+  tunnel_url=$(devtunnel show "$TUNNEL_NAME" 2>/dev/null | grep -oP 'https://\S+devtunnels\.ms/' | head -1)
+  if [ -n "$tunnel_url" ]; then
+    echo -e "  ${BOLD}Remote URL:${NC} ${CYAN}${tunnel_url}${NC}"
+    echo ""
+    POCKETSHELL_QR_URL="$tunnel_url" node -e "
+      const QRCode = require('qrcode');
+      QRCode.toString(process.env.POCKETSHELL_QR_URL, {type:'terminal', small:true}, (e,s) => {
+        if (!e) process.stdout.write(s);
+      });
+    " 2>/dev/null || true
+    echo ""
+  fi
+
+  if [ "$detach" = "true" ]; then
+    echo -e "  ${GREEN}Running in background. Use ${CYAN}./pocketshell.sh stop${GREEN} to stop.${NC}"
+    echo ""
+  else
+    # Wait for either process to exit, then clean up
+    wait -n "$server_pid" "$tunnel_pid" 2>/dev/null || true
+    cleanup
+  fi
 }
 
 cmd_dev_tool() {
@@ -325,9 +349,10 @@ case "$COMMAND" in
     cmd_setup
     ;;
   start)
-    # Collect mode and --force from args (order-independent)
+    # Collect mode, --force, --detach from args (order-independent)
     START_MODE="--local"
     FORCE="false"
+    DETACH="false"
     remaining_args=()
 
     for arg in "$@"; do
@@ -337,6 +362,9 @@ case "$COMMAND" in
           ;;
         --force)
           FORCE="true"
+          ;;
+        --detach)
+          DETACH="true"
           ;;
         *)
           remaining_args+=("$arg")
@@ -349,7 +377,7 @@ case "$COMMAND" in
         cmd_start_local "$FORCE" "${remaining_args[@]+"${remaining_args[@]}"}"
         ;;
       --remote)
-        cmd_start_remote "$FORCE"
+        cmd_start_remote "$FORCE" "$DETACH"
         ;;
       --local-noauth)
         cmd_start_noauth "$FORCE" "${remaining_args[@]+"${remaining_args[@]}"}"
@@ -364,18 +392,18 @@ case "$COMMAND" in
     sleep 1
     # Re-parse remaining args as if they were passed to 'start'
     START_MODE="--local"
-    FORCE="false"
+    DETACH="false"
     remaining_args=()
     for arg in "$@"; do
       case "$arg" in
         --local|--remote|--local-noauth) START_MODE="$arg" ;;
-        --force) FORCE="true" ;;
+        --detach) DETACH="true" ;;
         *) remaining_args+=("$arg") ;;
       esac
     done
     case "$START_MODE" in
       --local)        cmd_start_local "false" "${remaining_args[@]+"${remaining_args[@]}"}" ;;
-      --remote)       cmd_start_remote "false" ;;
+      --remote)       cmd_start_remote "false" "$DETACH" ;;
       --local-noauth) cmd_start_noauth "false" "${remaining_args[@]+"${remaining_args[@]}"}" ;;
     esac
     ;;
